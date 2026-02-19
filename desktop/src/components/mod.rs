@@ -4,4 +4,5 @@ pub mod query_editor;
 pub mod schema_viewer;
 pub mod sidebar;
 pub mod statusbar;
+pub mod variables_panel;
 pub mod workspace;

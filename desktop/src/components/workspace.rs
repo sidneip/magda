@@ -1,9 +1,20 @@
 use dioxus::prelude::*;
 
-use crate::state::{ActiveTab, AppState, DEFAULT_PAGE_SIZE};
+use crate::state::{ActiveTab, AppState, QueryVariable, DEFAULT_PAGE_SIZE};
 use super::query_editor::QueryEditor;
 use super::data_grid::DataGrid;
 use super::schema_viewer::SchemaViewer;
+use super::variables_panel::VariablesPanel;
+
+fn substitute_variables(query: &str, vars: &[QueryVariable]) -> String {
+    let mut result = query.to_string();
+    for var in vars {
+        if !var.name.is_empty() {
+            result = result.replace(&format!("{{{{{}}}}}", var.name), &var.value);
+        }
+    }
+    result
+}
 
 #[component]
 pub fn Workspace() -> Element {
@@ -41,6 +52,12 @@ pub fn Workspace() -> Element {
                     is_active: *active_tab.read() == ActiveTab::History,
                     onclick: move |_| active_tab.set(ActiveTab::History)
                 }
+
+                TabButton {
+                    label: "Variables",
+                    is_active: *active_tab.read() == ActiveTab::Variables,
+                    onclick: move |_| active_tab.set(ActiveTab::Variables)
+                }
             }
             
             // Tab content
@@ -59,6 +76,9 @@ pub fn Workspace() -> Element {
                     },
                     ActiveTab::History => rsx! {
                         HistoryWorkspace {}
+                    },
+                    ActiveTab::Variables => rsx! {
+                        VariablesPanel {}
                     }
                 }
             }
@@ -83,245 +103,178 @@ fn TabButton(
 
 #[component]
 fn QueryWorkspace() -> Element {
-    let app_state = use_context::<Signal<AppState>>();
-    let query_result = use_signal(|| None::<crate::components::data_grid::QueryResult>);
-    let query_error = use_signal(|| None::<String>);
-    let is_executing = use_signal(|| false);
+    let mut app_state = use_context::<Signal<AppState>>();
+
+    // Full cached result from the last query execution
+    let mut cached_result = use_signal(|| None::<crate::components::data_grid::QueryResult>);
+    let mut query_error = use_signal(|| None::<String>);
+    let mut is_executing = use_signal(|| false);
     let mut current_page = use_signal(|| 1u32);
     let mut original_query = use_signal(|| String::new());
-    let mut paging_state = use_signal(|| None::<String>);
-    let mut page_states = use_signal(|| Vec::<Option<String>>::new());
-    
-    // Function to execute query with real Cassandra pagination using tokens
-    let execute_paginated_query = {
-        let app_state_clone = app_state.clone();
-        let query_result_clone = query_result.clone();
-        let query_error_clone = query_error.clone();
-        let is_executing_clone = is_executing.clone();
-        let paging_state_clone = paging_state.clone();
-        let page_states_clone = page_states.clone();
-        
-        move |base_query: String, page: u32, direction: &str| {
-            let mut app_state = app_state_clone.clone();
-            let mut query_result = query_result_clone.clone();
-            let mut query_error = query_error_clone.clone();
-            let mut is_executing = is_executing_clone.clone();
-            let _paging_state = paging_state_clone.clone();
-            let _page_states = page_states_clone.clone();
-            let direction = direction.to_string();
-            
-            is_executing.set(true);
-            query_error.set(None);
-            query_result.set(None);
-            
-            spawn(async move {
-                let connection = app_state.read().connection_manager.get_active_connection().await;
-                
-                if let Some(connection) = connection {
-                    let page_size = DEFAULT_PAGE_SIZE;
-                    
-                    // Build query with proper LIMIT
-                    let limited_query = if base_query.trim().to_lowercase().starts_with("select") && 
-                                         !base_query.to_lowercase().contains("limit") {
-                        format!("{} LIMIT {}", base_query.trim_end_matches(';'), page_size)
-                    } else {
-                        base_query.clone()
-                    };
-                    
-                    // For now, use simple pagination until we implement token-based pagination
-                    // This is a temporary approach - real Cassandra pagination would use paging_state tokens
-                    let skip_count = if direction == "next" || direction == "first" {
-                        (page - 1) * page_size
-                    } else {
-                        ((page - 1).max(0)) * page_size
-                    };
-                    
-                    let final_query = if skip_count > 0 && base_query.trim().to_lowercase().starts_with("select") {
-                        // Note: This is still a simplified approach
-                        // Real Cassandra would use prepared statements with paging_state
-                        format!("{} ALLOW FILTERING", limited_query)
-                    } else {
-                        limited_query.clone()
-                    };
-                    
-                    tracing::debug!("Executing paginated query (page {}, {}): {}", page, direction, final_query);
-                    match connection.execute_query(&final_query).await {
-                        Ok(mut result) => {
-                            // Store execution time before modifying result
-                            let execution_time = result.execution_time_ms;
-                            
-                            // For this version, still simulate pagination client-side
-                            // TODO: Implement real Cassandra token-based pagination
-                            if skip_count > 0 && skip_count < result.rows.len() as u32 {
-                                result.rows = result.rows.into_iter().skip(skip_count as usize).take(page_size as usize).collect();
-                                result.row_count = result.rows.len();
-                            } else if result.rows.len() > page_size as usize {
-                                result.rows = result.rows.into_iter().take(page_size as usize).collect();
-                                result.row_count = result.rows.len();
-                            }
-                            
-                            tracing::info!("Paginated query: {} rows (page {}, {})", result.row_count, page, direction);
-                            query_result.set(Some(result));
-                            
-                            // Add to history  
-                            let history_item = crate::state::QueryHistoryItem {
-                                id: uuid::Uuid::new_v4(),
-                                query: format!("{} (page {}, {})", final_query, page, direction),
-                                success: true,
-                                execution_time_ms: execution_time,
-                                executed_at: chrono::Utc::now(),
-                            };
-                            app_state.write().query_history.write().push(history_item);
-                        }
-                        Err(e) => {
-                            let error_msg = format!("Paginated query failed: {}", e);
-                            tracing::error!("{}", error_msg);
-                            query_error.set(Some(error_msg));
-                            
-                            // Add failed query to history
-                            let history_item = crate::state::QueryHistoryItem {
-                                id: uuid::Uuid::new_v4(),
-                                query: format!("{} (page {}, {})", final_query, page, direction),
-                                success: false,
-                                execution_time_ms: 0,
-                                executed_at: chrono::Utc::now(),
-                            };
-                            app_state.write().query_history.write().push(history_item);
-                        }
-                    }
-                } else {
-                    let error_msg = "No active connection available";
-                    tracing::warn!("{}", error_msg);
-                    query_error.set(Some(error_msg.to_string()));
-                }
-                is_executing.set(false);
-            });
+
+    let page_size = DEFAULT_PAGE_SIZE as usize;
+
+    // Derive the current page slice from cache
+    let page_rows = {
+        let cached = cached_result.read();
+        if let Some(ref result) = *cached {
+            let start = ((*current_page.read() as usize) - 1) * page_size;
+            let end = (start + page_size).min(result.rows.len());
+            if start < result.rows.len() {
+                Some((result.columns.clone(), result.rows[start..end].to_vec(), result.execution_time_ms, result.row_count))
+            } else {
+                Some((result.columns.clone(), vec![], result.execution_time_ms, result.row_count))
+            }
+        } else {
+            None
         }
     };
-    
-    // Debug: Log when query_result changes
-    use_effect(move || {
-        if let Some(result) = query_result.read().as_ref() {
-            tracing::debug!("Query result updated: {} rows, {} columns",
-                          result.row_count, result.columns.len());
-        } else {
-            tracing::debug!("Query result cleared");
-        }
-    });
-    
+
+    let total_pages = {
+        let cached = cached_result.read();
+        cached.as_ref().map(|r| {
+            let total = r.rows.len();
+            ((total + page_size - 1) / page_size).max(1) as u32
+        }).unwrap_or(1)
+    };
+
+    // Execute query: fetch all rows once and cache them
+    let mut run_query = move |query: String| {
+        original_query.set(query.clone());
+        current_page.set(1);
+        is_executing.set(true);
+        query_error.set(None);
+        cached_result.set(None);
+
+        // Substitute variables before execution, keep original for history
+        let vars = app_state.read().query_variables.read().clone();
+        let substituted = substitute_variables(&query, &vars);
+
+        spawn(async move {
+            let cm = app_state.read().connection_manager.clone();
+            if let Some(connection) = cm.get_active_connection().await {
+                tracing::debug!("Executing query: {}", substituted);
+                match connection.execute_query(&substituted).await {
+                    Ok(result) => {
+                        let execution_time = result.execution_time_ms;
+                        tracing::info!("Query returned {} rows in {}ms", result.row_count, execution_time);
+                        cached_result.set(Some(result));
+
+                        // Store original query with placeholders in history
+                        let history_item = crate::state::QueryHistoryItem {
+                            id: uuid::Uuid::new_v4(),
+                            query: query.clone(),
+                            success: true,
+                            execution_time_ms: execution_time,
+                            executed_at: chrono::Utc::now(),
+                        };
+                        app_state.write().query_history.write().push(history_item);
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Query failed: {}", e);
+                        tracing::error!("{}", error_msg);
+                        query_error.set(Some(error_msg));
+
+                        let history_item = crate::state::QueryHistoryItem {
+                            id: uuid::Uuid::new_v4(),
+                            query: query.clone(),
+                            success: false,
+                            execution_time_ms: 0,
+                            executed_at: chrono::Utc::now(),
+                        };
+                        app_state.write().query_history.write().push(history_item);
+                    }
+                }
+            } else {
+                query_error.set(Some("No active connection available".to_string()));
+            }
+            is_executing.set(false);
+        });
+    };
+
     rsx! {
         div {
             class: "query-workspace",
-            
+
             // Query editor at the top
             div {
                 class: "query-editor-container",
                 QueryEditor {
                     is_executing: is_executing,
                     on_execute: move |query: String| {
-                        // Store original query and reset to page 1
-                        original_query.set(query.clone());
-                        current_page.set(1);
-                        paging_state.set(None);
-                        page_states.set(vec![None]); // Start with first page state
-                        
-                        // Execute first page
-                        execute_paginated_query(query, 1, "first");
+                        run_query(query);
                     }
                 }
             }
-            
+
             // Results grid at the bottom
             div {
                 class: "query-results-container",
-                
-                // Show error if there is one
+
                 if let Some(error) = query_error.read().as_ref() {
                     div {
                         class: "query-error",
-                        div {
-                            class: "error-header",
-                            "❌ Error"
-                        }
-                        div {
-                            class: "error-message",
-                            "{error}"
-                        }
+                        div { class: "error-header", "Error" }
+                        div { class: "error-message", "{error}" }
                     }
-                }
-                // Show results if successful  
-                else if let Some(result) = query_result.read().as_ref() {
+                } else if let Some((columns, rows, exec_time, total_rows)) = page_rows {
                     div {
                         class: "query-results",
-                        
+
                         div {
                             class: "results-header",
                             div {
                                 class: "results-info",
-                                span { "✅ Results: {result.row_count} rows in {result.execution_time_ms}ms" }
-                                if original_query.read().trim().to_lowercase().starts_with("select") {
-                                    span { 
+                                span { "Results: {total_rows} rows in {exec_time}ms" }
+                                if total_pages > 1 {
+                                    span {
                                         class: "pagination-hint",
-                                        " (page {current_page.read()}, client-side pagination - consider LIMIT for better performance)"
+                                        " (page {current_page.read()} of {total_pages})"
                                     }
                                 }
                             }
-                            
-                            // Pagination controls for SELECT queries
-                            if original_query.read().trim().to_lowercase().starts_with("select") && !original_query.read().trim().is_empty() {
+
+                            if total_pages > 1 {
                                 div {
                                     class: "pagination-controls",
-                                    
+
                                     button {
                                         class: "btn btn-secondary",
                                         disabled: *current_page.read() <= 1,
-                                        onclick: {
-                                            let execute_fn = execute_paginated_query.clone();
-                                            let query = original_query.read().clone();
-                                            move |_| {
-                                                let new_page = *current_page.read() - 1;
-                                                if new_page >= 1 {
-                                                    current_page.set(new_page);
-                                                    execute_fn(query.clone(), new_page, "previous");
-                                                }
-                                            }
+                                        onclick: move |_| {
+                                            let p = *current_page.read();
+                                            if p > 1 { current_page.set(p - 1); }
                                         },
-                                        "◀ Previous"
+                                        "Previous"
                                     }
-                                    
+
                                     span {
                                         class: "page-info",
-                                        "Page {current_page.read()}"
+                                        "Page {current_page.read()} / {total_pages}"
                                     }
-                                    
+
                                     button {
                                         class: "btn btn-secondary",
-                                        onclick: {
-                                            let execute_fn = execute_paginated_query.clone();
-                                            let query = original_query.read().clone();
-                                            move |_| {
-                                                let new_page = *current_page.read() + 1;
-                                                current_page.set(new_page);
-                                                execute_fn(query.clone(), new_page, "next");
-                                            }
+                                        disabled: *current_page.read() >= total_pages,
+                                        onclick: move |_| {
+                                            let p = *current_page.read();
+                                            if p < total_pages { current_page.set(p + 1); }
                                         },
-                                        "Next ▶"
+                                        "Next"
                                     }
                                 }
                             }
                         }
-                        
-                        // Results table
-                        if result.row_count > 0 {
+
+                        if !rows.is_empty() {
                             div {
                                 class: "results-table-container",
                                 table {
                                     class: "results-table",
-                                    
                                     thead {
                                         tr {
-                                            for column in result.columns.iter() {
-                                                th { 
+                                            for column in columns.iter() {
+                                                th {
                                                     div {
                                                         class: "column-header",
                                                         span { class: "column-name", "{column.name}" }
@@ -331,9 +284,8 @@ fn QueryWorkspace() -> Element {
                                             }
                                         }
                                     }
-                                    
                                     tbody {
-                                        for row in result.rows.iter() {
+                                        for row in rows.iter() {
                                             tr {
                                                 for cell in row.iter() {
                                                     td {
@@ -358,19 +310,19 @@ fn QueryWorkspace() -> Element {
                             }
                         }
                     }
-                }
-                // Show executing indicator
-                else if *is_executing.read() {
+                } else if *is_executing.read() {
                     div {
                         class: "executing-indicator",
-                        "⏳ Executing query..."
+                        "Executing query..."
                     }
-                }
-                // Show initial state
-                else {
+                } else {
                     div {
                         class: "no-results",
-                        "Execute a query to see results here"
+                        p { "Run a query to see results" }
+                        p {
+                            class: "empty-state-hint",
+                            "Use Ctrl+Enter or click Execute"
+                        }
                     }
                 }
             }
@@ -458,13 +410,13 @@ fn DataWorkspace() -> Element {
 
 #[component]
 fn HistoryWorkspace() -> Element {
-    let app_state = use_context::<Signal<AppState>>();
+    let mut app_state = use_context::<Signal<AppState>>();
     let history = app_state.read().query_history.clone();
-    
+
     rsx! {
         div {
             class: "history-workspace",
-            
+
             if history.read().is_empty() {
                 div {
                     class: "empty-state",
@@ -473,20 +425,30 @@ fn HistoryWorkspace() -> Element {
             } else {
                 div {
                     class: "history-list",
-                    
+
                     for item in history.read().iter().rev() {
-                        div {
-                            key: "{item.id}",
-                            class: if item.success { "history-item success" } else { "history-item error" },
-                            
-                            div {
-                                class: "history-query",
-                                "{item.query}"
-                            }
-                            
-                            div {
-                                class: "history-meta",
-                                span { "{item.execution_time_ms}ms" }
+                        {
+                            let query = item.query.clone();
+                            rsx! {
+                                div {
+                                    key: "{item.id}",
+                                    class: if item.success { "history-item success" } else { "history-item error" },
+                                    style: "cursor: pointer;",
+                                    onclick: move |_| {
+                                        app_state.write().pending_query.set(Some(query.clone()));
+                                        app_state.read().active_tab.clone().set(ActiveTab::Query);
+                                    },
+
+                                    div {
+                                        class: "history-query",
+                                        "{item.query}"
+                                    }
+
+                                    div {
+                                        class: "history-meta",
+                                        span { "{item.execution_time_ms}ms" }
+                                    }
+                                }
                             }
                         }
                     }

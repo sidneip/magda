@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -10,6 +11,13 @@ pub const DEFAULT_PAGE_SIZE: u32 = 100;
 /// Maximum number of query history entries to retain
 pub const MAX_QUERY_HISTORY: usize = 100;
 
+/// A reusable query variable that gets substituted into CQL queries via `{{name}}` syntax.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct QueryVariable {
+    pub name: String,
+    pub value: String,
+}
+
 /// Global application state
 #[derive(Clone)]
 pub struct AppState {
@@ -19,6 +27,11 @@ pub struct AppState {
     pub sidebar_visible: Signal<bool>,
     pub theme: Signal<Theme>,
     pub selected_table: Signal<Option<String>>,
+    pub pending_query: Signal<Option<String>>,
+    /// Reactive connection status string for the statusbar.
+    /// `None` means disconnected, `Some(description)` means connected.
+    pub connection_status: Signal<Option<String>>,
+    pub query_variables: Signal<Vec<QueryVariable>>,
 }
 
 impl AppState {
@@ -31,6 +44,9 @@ impl AppState {
             sidebar_visible: Signal::new(true),
             theme: Signal::new(Theme::Dark),
             selected_table: Signal::new(None),
+            pending_query: Signal::new(None),
+            connection_status: Signal::new(None),
+            query_variables: Signal::new(crate::config::load_variables()),
         }
     }
     
@@ -86,6 +102,7 @@ pub enum ActiveTab {
     Schema,
     Data,
     History,
+    Variables,
 }
 
 /// Application theme

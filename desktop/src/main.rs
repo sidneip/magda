@@ -28,6 +28,7 @@ fn App() -> Element {
     
     rsx! {
         // Global app resources
+        document::Title { "Magda" }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
         
         div {

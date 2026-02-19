@@ -6,6 +6,7 @@ use tracing::{debug, info};
 
 use crate::connection::ConnectionConfig;
 use crate::error::{MagdaError, Result};
+use crate::state::QueryVariable;
 
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,6 +104,52 @@ impl AppConfig {
         if self.recent_queries.len() > 50 {
             self.recent_queries.truncate(50);
         }
+    }
+}
+
+/// Wrapper for TOML serialization of variables
+#[derive(Debug, Serialize, Deserialize)]
+struct VariablesFile {
+    variables: Vec<QueryVariable>,
+}
+
+fn variables_file_path() -> Option<PathBuf> {
+    ProjectDirs::from("com", "magda", "Magda")
+        .map(|dirs| dirs.config_dir().join("variables.toml"))
+}
+
+/// Load query variables from disk, returning an empty vec on any error.
+pub fn load_variables() -> Vec<QueryVariable> {
+    let Some(path) = variables_file_path() else {
+        return Vec::new();
+    };
+    let Ok(content) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    toml::from_str::<VariablesFile>(&content)
+        .map(|f| f.variables)
+        .unwrap_or_default()
+}
+
+/// Save query variables to disk.
+pub fn save_variables(vars: &[QueryVariable]) {
+    let Some(path) = variables_file_path() else {
+        tracing::warn!("Could not determine config directory for variables");
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let file = VariablesFile {
+        variables: vars.to_vec(),
+    };
+    match toml::to_string_pretty(&file) {
+        Ok(content) => {
+            if let Err(e) = fs::write(&path, content) {
+                tracing::warn!("Failed to save variables: {}", e);
+            }
+        }
+        Err(e) => tracing::warn!("Failed to serialize variables: {}", e),
     }
 }
 

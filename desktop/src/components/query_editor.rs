@@ -1,9 +1,21 @@
 use dioxus::prelude::*;
 
-#[component]  
+use crate::state::AppState;
+
+#[component]
 pub fn QueryEditor(on_execute: EventHandler<String>, is_executing: Signal<bool>) -> Element {
+    let mut app_state = use_context::<Signal<AppState>>();
     let mut query_text = use_signal(String::new);
-    
+
+    // Consume pending_query from AppState (set by history click)
+    use_effect(move || {
+        let pending = app_state.read().pending_query.read().clone();
+        if let Some(query) = pending {
+            query_text.set(query);
+            app_state.write().pending_query.set(None);
+        }
+    });
+
     rsx! {
         div {
             class: "query-editor",

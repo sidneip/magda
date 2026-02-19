@@ -101,7 +101,7 @@ fn ConnectionItem(
     is_selected: bool,
     on_select: EventHandler<Uuid>
 ) -> Element {
-    let app_state = use_context::<Signal<AppState>>();
+    let mut app_state = use_context::<Signal<AppState>>();
     let mut is_connected = use_signal(|| false);
     let mut is_connecting = use_signal(|| false);
     
@@ -162,13 +162,19 @@ fn ConnectionItem(
                             tracing::info!("Connecting to: {}", conn_name);
                             spawn(async move {
                                 tracing::debug!("Attempting to connect to: {} (id: {})", conn_name, id);
-                                match app_state.read()
-                                    .connection_manager
-                                    .connect(id)
-                                    .await {
+                                let cm = app_state.read().connection_manager.clone();
+                                match cm.connect(id).await {
                                     Ok(_) => {
                                         tracing::info!("Connected to: {}", conn_name);
                                         is_connected.set(true);
+                                        // Update reactive connection status for statusbar
+                                        let config = cm.get_config(id).await;
+                                        if let Some(cfg) = config {
+                                            let ks = cfg.keyspace.map(|k| format!(" / {}", k)).unwrap_or_default();
+                                            app_state.write().connection_status.set(
+                                                Some(format!("Connected: {}:{}{}", cfg.host, cfg.port, ks))
+                                            );
+                                        }
                                     }
                                     Err(e) => {
                                         tracing::error!("Failed to connect to {}: {}", conn_name, e);
@@ -193,6 +199,7 @@ fn ConnectionItem(
                                     .disconnect(id)
                                     .await;
                                 is_connected.set(false);
+                                app_state.write().connection_status.set(None);
                             });
                         },
                         "Disconnect"

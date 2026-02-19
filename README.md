@@ -1,72 +1,101 @@
-# Development
+<div align="center">
 
-Your new workspace contains a member crate for each of the web, desktop and mobile platforms, a `ui` crate for shared components and a `api` crate for shared backend logic:
+# Magda
 
-```
-your_project/
-├─ web/
-│  ├─ ... # Web specific UI/logic
-├─ desktop/
-│  ├─ ... # Desktop specific UI/logic
-├─ mobile/
-│  ├─ ... # Mobile specific UI/logic
-├─ api/
-│  ├─ ... # All shared server logic
-├─ ui/
-│  ├─ ... # Component shared between multiple platforms
-```
+A modern, fast desktop client for Apache Cassandra — built entirely in Rust.
 
-## Platform crates
+[![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Dioxus](https://img.shields.io/badge/Dioxus-0.6-blue?style=flat)](https://dioxuslabs.com/)
+[![Cassandra](https://img.shields.io/badge/Apache%20Cassandra-1287B1?style=flat&logo=apache-cassandra&logoColor=white)](https://cassandra.apache.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-Each platform crate contains the entry point for the platform, and any assets, components and dependencies that are specific to that platform. For example, the desktop crate in the workspace looks something like this:
+</div>
 
-```
-desktop/ # The desktop crate contains all platform specific UI, logic and dependencies for the desktop app
-├─ assets/ # Assets used by the desktop app - Any platform specific assets should go in this folder
-├─ src/
-│  ├─ main.rs # The entrypoint for the desktop app. It also defines the routes for the desktop platform
-│  ├─ views/ # The views each route will render in the desktop version of the app
-│  │  ├─ mod.rs # Defines the module for the views route and re-exports the components for each route
-│  │  ├─ blog.rs # The component that will render at the /blog/:id route
-│  │  ├─ home.rs # The component that will render at the / route
-├─ Cargo.toml # The desktop crate's Cargo.toml - This should include all desktop specific dependencies
-```
+---
 
-When you start developing with the workspace setup each of the platform crates will look almost identical. The UI starts out exactly the same on all platforms. However, as you continue developing your application, this setup makes it easy to let the views for each platform change independently.
+<!-- TODO: Replace with actual screenshot after UI polish -->
+<!-- ![Magda Screenshot](docs/screenshots/query-results.png) -->
 
-## Shared UI crate
+## About
 
-The workspace contains a `ui` crate with components that are shared between multiple platforms. You should put any UI elements you want to use in multiple platforms in this crate. You can also put some shared client side logic in this crate, but be careful to not pull in platform specific dependencies. The `ui` crate starts out something like this:
+Magda is a native desktop client for Apache Cassandra, designed for developers who need a fast, lightweight alternative to browser-based tools. Built with [Dioxus](https://dioxuslabs.com/) and Rust, it delivers native performance with a clean, modern interface.
 
-```
-ui/
-├─ src/
-│  ├─ lib.rs # The entrypoint for the ui crate
-│  ├─ hero.rs # The Hero component that will be used in every platform
-│  ├─ echo.rs # The shared echo component that communicates with the server
-│  ├─ navbar.rs # The Navbar component that will be used in the layout of every platform's router
-```
+## Features
 
-## Shared backend logic
+- **CQL Query Editor** — Write and execute CQL queries with keyboard shortcuts (`Ctrl+Enter`)
+- **Multiple Connections** — Manage and switch between multiple Cassandra clusters
+- **Schema Browser** — Explore keyspaces, tables, and column definitions
+- **Data Grid** — Browse table data with automatic pagination
+- **Query Variables** — Define reusable `{{variables}}` that get substituted into queries
+- **Query History** — Click any past query to load it back into the editor
+- **Persistent Config** — Connections and variables are saved to disk across sessions
 
-The workspace contains a `api` crate with shared backend logic. This crate defines all of the shared server functions for all platforms. Server functions are async functions that expose a public API on the server. They can be called like a normal async function from the client. When you run `dx serve`, all of the server functions will be collected in the server build and hosted on a public API for the client to call. The `api` crate starts out something like this:
+## Getting Started
 
-```
-api/
-├─ src/
-│  ├─ lib.rs # Exports a server function that echos the input string
-```
+### Prerequisites
 
-### Serving Your App
+- [Rust toolchain](https://rustup.rs/) (stable)
+- [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started): `cargo install dioxus-cli`
+- A running Apache Cassandra instance (default: `localhost:9042`)
 
-Navigate to the platform crate of your choice:
-```bash
-cd web
-```
-
-and serve:
+### Run
 
 ```bash
+cd desktop
 dx serve
 ```
 
+### Build
+
+```bash
+cargo build --release
+```
+
+## Architecture
+
+```
+magda/
+├── desktop/              # Desktop app (primary target)
+│   ├── assets/           # CSS styles
+│   └── src/
+│       ├── main.rs               # App entry point
+│       ├── state.rs              # Global state (Dioxus Signals)
+│       ├── cassandra.rs          # CQL driver integration (cdrs-tokio)
+│       ├── connection/           # Connection manager + config persistence
+│       ├── config.rs             # User preferences + variables (TOML)
+│       └── components/           # UI components
+│           ├── workspace.rs              # Tab-based main area
+│           ├── query_editor.rs           # CQL editor with Ctrl+Enter
+│           ├── data_grid.rs              # Results table with pagination
+│           ├── schema_viewer.rs          # Keyspace & table schema browser
+│           ├── sidebar.rs                # Connection tree + table list
+│           ├── variables_panel.rs        # Query variable management
+│           ├── connection_dialog.rs      # New connection modal
+│           └── statusbar.rs              # Connection status indicator
+├── web/                  # Web target (shares architecture)
+├── mobile/               # Mobile target
+├── ui/                   # Shared UI components
+└── api/                  # Shared backend logic
+```
+
+### Key Technical Decisions
+
+| Decision | Why |
+|---|---|
+| **Dioxus Signals** for reactive state | Simpler than Redux-like patterns, built into the framework |
+| **`Arc<RwLock<>>`** connection manager | Thread-safe multi-connection support without global mutex |
+| **cdrs-tokio** Cassandra driver | Pure Rust, async-native, no C dependencies |
+| **TOML** for config persistence | Human-readable, easy to edit, standard in Rust ecosystem |
+
+## Roadmap
+
+- [ ] Syntax highlighting for CQL
+- [ ] Export results to CSV / JSON
+- [ ] Connection import / export
+- [ ] Light theme
+- [ ] Query autocomplete
+- [ ] Saved queries / snippets
+
+## License
+
+MIT
