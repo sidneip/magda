@@ -56,18 +56,19 @@ pub fn CodeEditor(
     let compute_suggestions = move |text: String| {
         let connection_manager = app_state.read().connection_manager.clone();
         spawn(async move {
-            // Get cursor position from the textarea
-            let cursor_eval = document::eval(
-                r#"
-                (function() {
+            // Get cursor position via dioxus.send() + recv() (the documented pattern).
+            // Fallback to end-of-text if eval fails (common case: user types at the end).
+            let cursor: usize = {
+                let mut eval = document::eval(
+                    r#"
                     const ta = document.getElementById('cql-textarea');
-                    return ta ? ta.selectionStart : 0;
-                })()
-                "#,
-            );
-            let cursor: usize = match cursor_eval.await {
-                Ok(val) => val.as_f64().unwrap_or(0.0) as usize,
-                Err(_) => return,
+                    dioxus.send(ta ? ta.selectionStart : -1);
+                    "#,
+                );
+                match eval.recv::<i64>().await {
+                    Ok(pos) if pos >= 0 => pos as usize,
+                    _ => text.len(), // fallback: assume cursor at end
+                }
             };
 
             let (partial, word_start) = cql_tokenizer::word_at_cursor(&text, cursor);
@@ -143,13 +144,11 @@ pub fn CodeEditor(
         // Restore cursor position after the inserted text
         let js = format!(
             r#"
-            (function() {{
-                const ta = document.getElementById('cql-textarea');
-                if (ta) {{
-                    ta.focus();
-                    ta.setSelectionRange({pos}, {pos});
-                }}
-            }})();
+            const ta = document.getElementById('cql-textarea');
+            if (ta) {{
+                ta.focus();
+                ta.setSelectionRange({pos}, {pos});
+            }}
             "#,
             pos = new_cursor
         );

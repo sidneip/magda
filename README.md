@@ -80,12 +80,12 @@ magda/
 
 ### Key Technical Decisions
 
-| Decision | Why |
-|---|---|
-| **Dioxus Signals** for reactive state | Simpler than Redux-like patterns, built into the framework |
-| **`Arc<RwLock<>>`** connection manager | Thread-safe multi-connection support without global mutex |
-| **cdrs-tokio** Cassandra driver | Pure Rust, async-native, no C dependencies |
-| **TOML** for config persistence | Human-readable, easy to edit, standard in Rust ecosystem |
+| Decision                               | Why                                                        |
+| -------------------------------------- | ---------------------------------------------------------- |
+| **Dioxus Signals** for reactive state  | Simpler than Redux-like patterns, built into the framework |
+| **`Arc<RwLock<>>`** connection manager | Thread-safe multi-connection support without global mutex  |
+| **cdrs-tokio** Cassandra driver        | Pure Rust, async-native, no C dependencies                 |
+| **TOML** for config persistence        | Human-readable, easy to edit, standard in Rust ecosystem   |
 
 ## Roadmap
 
@@ -96,6 +96,7 @@ magda/
 - [ ] Light theme
 - [x] Query autocomplete
 - [x] Saved queries / snippets
+- [ ] Edit table data directly in the grid
 
 ## License
 
