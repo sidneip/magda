@@ -5,7 +5,7 @@
 A modern, fast desktop client for Apache Cassandra — built entirely in Rust.
 
 [![Rust](https://img.shields.io/badge/Rust-000000?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![Dioxus](https://img.shields.io/badge/Dioxus-0.6-blue?style=flat)](https://dioxuslabs.com/)
+[![Dioxus](https://img.shields.io/badge/Dioxus-0.7-blue?style=flat)](https://dioxuslabs.com/)
 [![Cassandra](https://img.shields.io/badge/Apache%20Cassandra-1287B1?style=flat&logo=apache-cassandra&logoColor=white)](https://cassandra.apache.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -97,6 +97,8 @@ magda/
 - [x] Query autocomplete
 - [x] Saved queries / snippets
 - [ ] Edit table data directly in the grid
+- [ ] Import tables from CSV files
+- [ ] Visual query builder
 
 ## License
 

@@ -1,0 +1,24 @@
+[application]
+name = "Magda"
+default_platform = "desktop"
+
+[web.app]
+title = "Magda"
+
+[web.watcher]
+
+[web.resource.dev]
+
+[bundle]
+identifier = "com.magda.desktop"
+publisher = "Magda Contributors"
+icon = [
+    "assets/icon_32x32.png",
+    "assets/icon_128x128.png",
+    "assets/icon_256x256.png",
+    "assets/icon.icns",
+    "assets/icon.ico",
+]
+
+[bundle.windows]
+icon_path = "assets/icon.ico"

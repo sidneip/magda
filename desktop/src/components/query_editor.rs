@@ -6,7 +6,7 @@ use crate::state::{AppState, SavedQuery};
 #[component]
 pub fn QueryEditor(on_execute: EventHandler<String>, is_executing: Signal<bool>) -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
-    let mut query_text = use_signal(String::new);
+    let mut query_text = app_state.read().query_text;
     let mut show_save_input = use_signal(|| false);
     let mut save_name = use_signal(String::new);
 

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#4f46e5"/>
+    </linearGradient>
+    <linearGradient id="db" x1="0.5" y1="0" x2="0.5" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#e0e7ff" stop-opacity="0.90"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect width="512" height="512" rx="108" fill="url(#bg)"/>
+
+  <!-- Database cylinder body -->
+  <rect x="148" y="168" width="216" height="200" rx="4" fill="url(#db)"/>
+
+  <!-- Top ellipse (lid) -->
+  <ellipse cx="256" cy="168" rx="108" ry="40" fill="#e0e7ff"/>
+  <ellipse cx="256" cy="168" rx="108" ry="40" fill="none" stroke="#ffffff" stroke-width="6"/>
+
+  <!-- Bottom ellipse (base) -->
+  <path d="M148 368 Q148 408 256 408 Q364 408 364 368" fill="url(#db)" stroke="#ffffff" stroke-width="4"/>
+
+  <!-- Middle ring lines -->
+  <path d="M148 240 Q148 280 256 280 Q364 280 364 240" fill="none" stroke="#818cf8" stroke-width="5" stroke-opacity="0.5"/>
+  <path d="M148 308 Q148 348 256 348 Q364 348 364 308" fill="none" stroke="#818cf8" stroke-width="5" stroke-opacity="0.5"/>
+
+  <!-- Side strokes -->
+  <line x1="148" y1="168" x2="148" y2="368" stroke="#ffffff" stroke-width="6"/>
+  <line x1="364" y1="168" x2="364" y2="368" stroke="#ffffff" stroke-width="6"/>
+
+  <!-- Spark / query cursor (small lightning bolt) -->
+  <path d="M280 110 L264 156 L284 152 L268 198" fill="none" stroke="#fbbf24" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

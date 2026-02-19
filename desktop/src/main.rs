@@ -15,11 +15,49 @@ const MAIN_CSS: Asset = asset!("/assets/main.css");
 fn main() {
     // Initialize logging
     init_logger();
-    
+
     tracing::info!("Starting Magda - Cassandra Desktop Client");
-    
-    // Launch the desktop application
-    dioxus::launch(App);
+
+    // Set macOS dock icon before launching the window
+    #[cfg(target_os = "macos")]
+    set_macos_dock_icon();
+
+    // Launch the desktop application with window icon
+    LaunchBuilder::new()
+        .with_cfg(
+            dioxus::desktop::Config::new().with_window(
+                dioxus::desktop::WindowBuilder::new()
+                    .with_title("Magda")
+                    .with_window_icon(load_window_icon()),
+            ),
+        )
+        .launch(App);
+}
+
+/// Load the app icon from the embedded PNG for the desktop window (Linux/Windows).
+fn load_window_icon() -> Option<dioxus::desktop::tao::window::Icon> {
+    let png_bytes = include_bytes!("../assets/icon.png");
+    let img = image::load_from_memory(png_bytes).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    dioxus::desktop::tao::window::Icon::from_rgba(img.into_raw(), w, h).ok()
+}
+
+/// Set the macOS dock icon via NSApplication.setApplicationIconImage.
+#[cfg(target_os = "macos")]
+fn set_macos_dock_icon() {
+    use objc2::AnyThread;
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSData;
+
+    let png_bytes = include_bytes!("../assets/icon.png");
+    unsafe {
+        let data = NSData::with_bytes(png_bytes);
+        let image = NSImage::initWithData(NSImage::alloc(), &data);
+        if let Some(image) = image {
+            let app = NSApplication::sharedApplication(objc2::MainThreadMarker::new().unwrap());
+            app.setApplicationIconImage(Some(&image));
+        }
+    }
 }
 
 #[component]

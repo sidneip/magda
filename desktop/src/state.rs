@@ -41,6 +41,8 @@ pub struct AppState {
     pub connection_status: Signal<Option<String>>,
     pub query_variables: Signal<Vec<QueryVariable>>,
     pub saved_queries: Signal<Vec<SavedQuery>>,
+    /// Current text in the query editor — persists across tab switches.
+    pub query_text: Signal<String>,
 }
 
 impl AppState {
@@ -57,6 +59,7 @@ impl AppState {
             connection_status: Signal::new(None),
             query_variables: Signal::new(crate::config::load_variables()),
             saved_queries: Signal::new(crate::config::load_saved_queries()),
+            query_text: Signal::new(String::new()),
         }
     }
     
