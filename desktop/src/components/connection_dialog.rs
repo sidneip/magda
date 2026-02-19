@@ -12,6 +12,7 @@ pub fn ConnectionDialog(
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
     let mut keyspace = use_signal(String::new);
+    let mut validation_error = use_signal(|| None::<String>);
     
     rsx! {
         div {
@@ -102,36 +103,68 @@ pub fn ConnectionDialog(
                     }
                 }
                 
+                // Validation error message
+                if let Some(error) = validation_error.read().as_ref() {
+                    div {
+                        class: "form-error",
+                        "{error}"
+                    }
+                }
+
                 div {
                     class: "modal-footer",
-                    
+
                     button {
                         class: "btn btn-secondary",
                         onclick: move |_| on_close.call(()),
                         "Cancel"
                     }
-                    
+
                     button {
                         class: "btn btn-primary",
                         onclick: move |_| {
-                            let mut config = ConnectionConfig::new(
-                                name.read().clone(),
-                                host.read().clone()
-                            );
-                            
-                            if let Ok(port_num) = port.read().parse::<u16>() {
-                                config.port = port_num;
+                            // Validate required fields
+                            if name.read().trim().is_empty() {
+                                validation_error.set(Some("Connection name is required".to_string()));
+                                return;
                             }
-                            
+                            if host.read().trim().is_empty() {
+                                validation_error.set(Some("Host is required".to_string()));
+                                return;
+                            }
+                            let port_num = match port.read().parse::<u16>() {
+                                Ok(p) if p > 0 => p,
+                                _ => {
+                                    validation_error.set(Some("Port must be a valid number (1-65535)".to_string()));
+                                    return;
+                                }
+                            };
+                            // Validate keyspace if provided
+                            let ks = keyspace.read().trim().to_string();
+                            if !ks.is_empty() {
+                                if let Err(e) = crate::cassandra::validate_cql_identifier(&ks) {
+                                    validation_error.set(Some(format!("Invalid keyspace: {}", e)));
+                                    return;
+                                }
+                            }
+
+                            validation_error.set(None);
+
+                            let mut config = ConnectionConfig::new(
+                                name.read().trim().to_string(),
+                                host.read().trim().to_string(),
+                            );
+                            config.port = port_num;
+
                             if !username.read().is_empty() {
                                 config.username = Some(username.read().clone());
                                 config.password = Some(password.read().clone());
                             }
-                            
-                            if !keyspace.read().is_empty() {
-                                config.keyspace = Some(keyspace.read().clone());
+
+                            if !ks.is_empty() {
+                                config.keyspace = Some(ks);
                             }
-                            
+
                             on_save.call(config);
                         },
                         "Save"

@@ -1,9 +1,9 @@
 use dioxus::prelude::*;
 
-use crate::state::{ActiveTab, AppState};
+use crate::state::{ActiveTab, AppState, DEFAULT_PAGE_SIZE};
 use super::query_editor::QueryEditor;
 use super::data_grid::DataGrid;
-// use super::schema_viewer::SchemaViewer;
+use super::schema_viewer::SchemaViewer;
 
 #[component]
 pub fn Workspace() -> Element {
@@ -55,7 +55,7 @@ pub fn Workspace() -> Element {
                         DataWorkspace {}
                     },
                     ActiveTab::Schema => rsx! {
-                        div { "Schema view coming soon" }
+                        SchemaViewer {}
                     },
                     ActiveTab::History => rsx! {
                         HistoryWorkspace {}
@@ -118,7 +118,7 @@ fn QueryWorkspace() -> Element {
                 let connection = app_state.read().connection_manager.get_active_connection().await;
                 
                 if let Some(connection) = connection {
-                    let page_size = 100u32;
+                    let page_size = DEFAULT_PAGE_SIZE;
                     
                     // Build query with proper LIMIT
                     let limited_query = if base_query.trim().to_lowercase().starts_with("select") && 
@@ -144,7 +144,7 @@ fn QueryWorkspace() -> Element {
                         limited_query.clone()
                     };
                     
-                    tracing::info!("🔍 Executing paginated query (page {}, {}): {}", page, direction, final_query);
+                    tracing::debug!("Executing paginated query (page {}, {}): {}", page, direction, final_query);
                     match connection.execute_query(&final_query).await {
                         Ok(mut result) => {
                             // Store execution time before modifying result
@@ -160,7 +160,7 @@ fn QueryWorkspace() -> Element {
                                 result.row_count = result.rows.len();
                             }
                             
-                            tracing::info!("✅ Paginated query executed: {} rows (page {}, {})", result.row_count, page, direction);
+                            tracing::info!("Paginated query: {} rows (page {}, {})", result.row_count, page, direction);
                             query_result.set(Some(result));
                             
                             // Add to history  
@@ -175,7 +175,7 @@ fn QueryWorkspace() -> Element {
                         }
                         Err(e) => {
                             let error_msg = format!("Paginated query failed: {}", e);
-                            tracing::error!("❌ {}", error_msg);
+                            tracing::error!("{}", error_msg);
                             query_error.set(Some(error_msg));
                             
                             // Add failed query to history
@@ -191,7 +191,7 @@ fn QueryWorkspace() -> Element {
                     }
                 } else {
                     let error_msg = "No active connection available";
-                    tracing::warn!("⚠️ {}", error_msg);
+                    tracing::warn!("{}", error_msg);
                     query_error.set(Some(error_msg.to_string()));
                 }
                 is_executing.set(false);
@@ -202,10 +202,10 @@ fn QueryWorkspace() -> Element {
     // Debug: Log when query_result changes
     use_effect(move || {
         if let Some(result) = query_result.read().as_ref() {
-            tracing::debug!("🎨 QueryWorkspace: query_result updated with {} rows and {} columns", 
+            tracing::debug!("Query result updated: {} rows, {} columns",
                           result.row_count, result.columns.len());
         } else {
-            tracing::debug!("🎨 QueryWorkspace: query_result is None");
+            tracing::debug!("Query result cleared");
         }
     });
     
@@ -384,51 +384,17 @@ fn DataWorkspace() -> Element {
     let selected_table = app_state.read().selected_table.clone();
     let mut tables = use_signal(|| Vec::<String>::new());
     
-    // Load real tables from active connection
     use_effect(move || {
         spawn(async move {
-            if let Some(connection) = app_state.read().connection_manager.get_active_connection().await {
-                // Use the keyspace from connection config, or find a suitable one
-                let keyspace_to_use = if let Some(keyspace) = &connection.config.keyspace {
-                    Some(keyspace.clone())
-                } else {
-                    // No keyspace configured, let's find available keyspaces and use the first non-system one
-                    match connection.list_keyspaces().await {
-                        Ok(keyspaces) => {
-                            tracing::info!("🔍 Found {} keyspaces, looking for non-system keyspace", keyspaces.len());
-                            
-                            // Look for "guruband" first (user's keyspace), then any non-system keyspace
-                            if keyspaces.contains(&"guruband".to_string()) {
-                                Some("guruband".to_string())
-                            } else {
-                                keyspaces.iter()
-                                    .find(|ks| !ks.starts_with("system") && !ks.is_empty())
-                                    .cloned()
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("❌ Failed to list keyspaces for data workspace: {}", e);
-                            None
-                        }
-                    }
-                };
-                
-                if let Some(keyspace) = keyspace_to_use {
-                    match connection.list_tables(&keyspace).await {
-                        Ok(real_tables) => {
-                            tracing::info!("✅ Loaded {} tables from '{}' keyspace for data workspace", real_tables.len(), keyspace);
-                            tables.set(real_tables);
-                        }
-                        Err(e) => {
-                            tracing::error!("❌ Failed to load tables from keyspace '{}' for data workspace: {}", keyspace, e);
-                        }
+            if let Some(conn) = app_state.read().connection_manager.get_active_connection().await {
+                if let Some(keyspace) = conn.resolve_keyspace().await {
+                    match conn.list_tables(&keyspace).await {
+                        Ok(t) => tables.set(t),
+                        Err(e) => tracing::error!("Failed to load tables: {}", e),
                     }
                 } else {
-                    tracing::warn!("⚠️ No keyspace configured for connection - cannot load tables for data workspace");
                     tables.set(Vec::new());
                 }
-            } else {
-                tracing::debug!("No active connection for data workspace");
             }
         });
     });
@@ -486,16 +452,6 @@ fn DataWorkspace() -> Element {
             DataGrid {
                 table_name: selected_table.read().clone()
             }
-        }
-    }
-}
-
-#[component]
-fn SchemaWorkspace() -> Element {
-    rsx! {
-        div {
-            class: "schema-workspace",
-            div { "Schema viewer coming soon" }
         }
     }
 }

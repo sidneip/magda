@@ -141,7 +141,6 @@ impl Default for UserPreferences {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     
     #[test]
     fn test_config_serialization() {

@@ -2,44 +2,39 @@ use magda_desktop::cassandra;
 
 #[tokio::main]
 async fn main() {
-    // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter("debug")
         .init();
-    
-    println!("🚀 Testing Cassandra connection to localhost:9042");
-    
-    match cassandra::create_session("localhost", 9042).await {
+
+    let host = std::env::args().nth(1).unwrap_or_else(|| "localhost".to_string());
+    let port: u16 = std::env::args().nth(2).and_then(|p| p.parse().ok()).unwrap_or(9042);
+
+    println!("Testing Cassandra connection to {}:{}", host, port);
+
+    match cassandra::create_session(&host, port).await {
         Ok(session) => {
-            println!("✅ Connected successfully!");
-            
-            // Test connection
+            println!("Connected successfully!");
+
             if let Err(e) = cassandra::test_connection(&session).await {
-                println!("❌ Connection test failed: {}", e);
+                println!("Connection test failed: {}", e);
+                return;
             }
-            
-            // List keyspaces
+
             match cassandra::list_keyspaces(&session).await {
                 Ok(keyspaces) => {
-                    println!("📋 Keyspaces found: {:?}", keyspaces);
+                    println!("Keyspaces: {:?}", keyspaces);
+                    for ks in &keyspaces {
+                        if !ks.starts_with("system") {
+                            match cassandra::list_tables(&session, ks).await {
+                                Ok(tables) => println!("  {}: {:?}", ks, tables),
+                                Err(e) => println!("  {}: failed to list tables: {}", ks, e),
+                            }
+                        }
+                    }
                 }
-                Err(e) => {
-                    println!("❌ Failed to list keyspaces: {}", e);
-                }
-            }
-            
-            // List tables in guruband
-            match cassandra::list_tables(&session, "guruband").await {
-                Ok(tables) => {
-                    println!("📋 Tables in guruband: {:?}", tables);
-                }
-                Err(e) => {
-                    println!("❌ Failed to list tables: {}", e);
-                }
+                Err(e) => println!("Failed to list keyspaces: {}", e),
             }
         }
-        Err(e) => {
-            println!("❌ Failed to connect: {}", e);
-        }
+        Err(e) => println!("Failed to connect: {}", e),
     }
 }

@@ -9,6 +9,42 @@ use serde_json::Value;
 use crate::error::{MagdaError, Result};
 use crate::components::data_grid::{QueryResult, ColumnInfo};
 
+/// A column in a Cassandra table schema
+#[derive(Clone, Debug)]
+pub struct SchemaColumn {
+    pub name: String,
+    pub data_type: String,
+    pub kind: String,
+    pub position: i32,
+    pub clustering_order: String,
+}
+
+/// Schema information for a Cassandra table
+#[derive(Clone, Debug)]
+pub struct TableSchema {
+    pub columns: Vec<SchemaColumn>,
+}
+
+/// Validate that a string is a safe CQL identifier (keyspace or table name).
+/// Accepts unquoted identifiers: starts with letter/underscore, followed by alphanumeric/underscores.
+pub fn validate_cql_identifier(name: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(MagdaError::validation("CQL identifier cannot be empty"));
+    }
+    let first = name.chars().next().unwrap();
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return Err(MagdaError::validation(format!(
+            "Invalid CQL identifier '{}': must start with a letter or underscore", name
+        )));
+    }
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(MagdaError::validation(format!(
+            "Invalid CQL identifier '{}': only letters, digits, and underscores allowed", name
+        )));
+    }
+    Ok(())
+}
+
 /// Wrapper for Cassandra session
 pub struct CassandraSession {
     inner: Arc<cdrs_tokio::cluster::session::Session<
@@ -30,7 +66,7 @@ impl CassandraSession {
 
 /// Create a new Cassandra session
 pub async fn create_session(host: &str, port: u16) -> Result<CassandraSession> {
-    tracing::info!("🔌 Creating real connection to {}:{}", host, port);
+    tracing::info!("Creating connection to {}:{}", host, port);
     
     let contact_point = format!("{}:{}", host, port);
     
@@ -50,7 +86,7 @@ pub async fn create_session(host: &str, port: u16) -> Result<CassandraSession> {
     .await
     .map_err(|e| MagdaError::ConnectionError(format!("Failed to create session: {}", e)))?;
 
-    tracing::info!("✅ Successfully connected to Cassandra at {}:{}", host, port);
+    tracing::info!("Connected to Cassandra at {}:{}", host, port);
     
     Ok(CassandraSession {
         inner: Arc::new(session),
@@ -59,7 +95,7 @@ pub async fn create_session(host: &str, port: u16) -> Result<CassandraSession> {
 
 /// List all keyspaces from the real database
 pub async fn list_keyspaces(session: &CassandraSession) -> Result<Vec<String>> {
-    tracing::info!("📋 Listing keyspaces from system_schema");
+    tracing::debug!("Listing keyspaces from system_schema");
     
     let result = session.query("SELECT keyspace_name FROM system_schema.keyspaces").await?;
     
@@ -89,7 +125,7 @@ pub async fn list_keyspaces(session: &CassandraSession) -> Result<Vec<String>> {
                     }
                 }
                 
-                tracing::info!("✅ Successfully extracted {} keyspace names", keyspaces.len());
+                tracing::debug!("Extracted {} keyspace names", keyspaces.len());
             },
             _ => {
                 tracing::debug!("Result is not Rows type, no keyspaces to extract");
@@ -97,19 +133,16 @@ pub async fn list_keyspaces(session: &CassandraSession) -> Result<Vec<String>> {
         }
     }
     
-    tracing::info!("✅ Found {} keyspaces", keyspaces.len());
-    for keyspace in &keyspaces {
-        tracing::debug!("  - Keyspace: {}", keyspace);
-    }
+    tracing::info!("Found {} keyspaces", keyspaces.len());
     
     Ok(keyspaces)
 }
 
 /// List all tables in a keyspace from the real database
 pub async fn list_tables(session: &CassandraSession, keyspace: &str) -> Result<Vec<String>> {
-    tracing::info!("📋 Listing tables for keyspace: {} from system_schema", keyspace);
-    
-    // Use a simpler query without parameters for now
+    validate_cql_identifier(keyspace)?;
+    tracing::info!("Listing tables for keyspace: {}", keyspace);
+
     let query = format!("SELECT table_name FROM system_schema.tables WHERE keyspace_name = '{}'", keyspace);
     
     let result = session.query(&query).await?;
@@ -118,8 +151,6 @@ pub async fn list_tables(session: &CassandraSession, keyspace: &str) -> Result<V
     
     // Process the envelope to extract table names
     if let ResponseBody::Result(res_result_body) = result.response_body()? {
-        tracing::debug!("ResResultBody: {:?}", res_result_body);
-        
         // Extract real table names from the result
         match res_result_body {
             cdrs_tokio::frame::message_result::ResResultBody::Rows(rows_result) => {
@@ -143,7 +174,7 @@ pub async fn list_tables(session: &CassandraSession, keyspace: &str) -> Result<V
                     }
                 }
                 
-                tracing::info!("✅ Successfully extracted {} table names", tables.len());
+                tracing::debug!("Extracted {} table names", tables.len());
             },
             _ => {
                 tracing::debug!("Result is not Rows type, no tables to extract");
@@ -151,18 +182,77 @@ pub async fn list_tables(session: &CassandraSession, keyspace: &str) -> Result<V
         }
     }
     
-    tracing::info!("✅ Found {} tables in keyspace '{}'", tables.len(), keyspace);
-    for table in &tables {
-        tracing::debug!("  - Table: {}", table);
-    }
+    tracing::info!("Found {} tables in keyspace '{}'", tables.len(), keyspace);
     
     Ok(tables)
+}
+
+/// Describe a table's columns from system_schema.columns
+pub async fn describe_table(session: &CassandraSession, keyspace: &str, table: &str) -> Result<TableSchema> {
+    validate_cql_identifier(keyspace)?;
+    validate_cql_identifier(table)?;
+    tracing::debug!("Describing table {}.{}", keyspace, table);
+
+    let query = format!(
+        "SELECT column_name, type, kind, position, clustering_order FROM system_schema.columns WHERE keyspace_name = '{}' AND table_name = '{}'",
+        keyspace, table
+    );
+
+    let result = session.query(&query).await?;
+    let mut columns = Vec::new();
+
+    if let ResponseBody::Result(res_result_body) = result.response_body()? {
+        if let cdrs_tokio::frame::message_result::ResResultBody::Rows(rows_result) = res_result_body {
+            for row in rows_result.rows_content.iter() {
+                let get_string = |idx: usize| -> String {
+                    row.get(idx)
+                        .and_then(|b| b.as_slice())
+                        .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                        .unwrap_or_default()
+                };
+                let position = row.get(3)
+                    .and_then(|b| b.as_slice())
+                    .map(|bytes| {
+                        if bytes.len() == 4 {
+                            i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]])
+                        } else {
+                            0
+                        }
+                    })
+                    .unwrap_or(0);
+
+                columns.push(SchemaColumn {
+                    name: get_string(0),
+                    data_type: get_string(1),
+                    kind: get_string(2),
+                    position,
+                    clustering_order: get_string(4),
+                });
+            }
+        }
+    }
+
+    // Sort: partition_key by position, then clustering by position, then static, then regular
+    columns.sort_by(|a, b| {
+        let kind_order = |k: &str| match k {
+            "partition_key" => 0,
+            "clustering" => 1,
+            "static" => 2,
+            _ => 3,
+        };
+        kind_order(&a.kind).cmp(&kind_order(&b.kind))
+            .then(a.position.cmp(&b.position))
+            .then(a.name.cmp(&b.name))
+    });
+
+    tracing::info!("Described {}.{}: {} columns", keyspace, table, columns.len());
+    Ok(TableSchema { columns })
 }
 
 /// Execute a CQL query and return results
 pub async fn execute_query(session: &CassandraSession, query: &str) -> Result<QueryResult> {
     let start = Instant::now();
-    tracing::info!("🔍 Executing real query: {}", query);
+    tracing::debug!("Executing query: {}", query);
     
     let result = session.query(query).await?;
     
@@ -184,7 +274,7 @@ pub async fn execute_query(session: &CassandraSession, query: &str) -> Result<Qu
                     for col_spec in col_specs {
                         columns.push(ColumnInfo {
                             name: col_spec.name.clone(),
-                            data_type: format!("{:?}", col_spec.col_type),
+                            data_type: format_col_type(&col_spec.col_type),
                         });
                     }
                 }
@@ -211,7 +301,7 @@ pub async fn execute_query(session: &CassandraSession, query: &str) -> Result<Qu
                 }
                 
                 row_count = rows.len();
-                tracing::info!("✅ Extracted {} columns and {} rows", columns.len(), row_count);
+                tracing::debug!("Extracted {} columns and {} rows", columns.len(), row_count);
             },
             _ => {
                 tracing::debug!("Result is not Rows type, no data to extract");
@@ -229,7 +319,7 @@ pub async fn execute_query(session: &CassandraSession, query: &str) -> Result<Qu
         row_count = 1;
     }
     
-    tracing::info!("✅ Query executed successfully in {}ms, {} rows returned", execution_time, row_count);
+    tracing::info!("Query executed in {}ms, {} rows returned", execution_time, row_count);
     
     Ok(QueryResult {
         columns,
@@ -241,89 +331,157 @@ pub async fn execute_query(session: &CassandraSession, query: &str) -> Result<Qu
 
 /// Test the connection by executing a simple system query
 pub async fn test_connection(session: &CassandraSession) -> Result<()> {
-    tracing::info!("🧪 Testing connection with system query");
+    tracing::debug!("Testing connection with system query");
     
     let result = session.query("SELECT release_version FROM system.local").await?;
     
     // Try to extract version information
     if let ResponseBody::Result(res_result_body) = result.response_body()? {
         if let Some(rows_metadata) = res_result_body.as_rows_metadata() {
-            tracing::info!("✅ Connection test query returned {} columns", rows_metadata.columns_count);
+            tracing::debug!("Connection test: {} columns returned", rows_metadata.columns_count);
             // For now, just confirm connection works
             return Ok(());
         }
     }
     
-    tracing::info!("✅ Connection test passed (no version info)");
+    tracing::debug!("Connection test passed");
     Ok(())
+}
+
+/// Format a ColTypeOption into a clean, human-readable type name
+fn format_col_type(col_type: &cdrs_tokio::frame::message_result::ColTypeOption) -> String {
+    format!("{:?}", col_type.id).to_lowercase()
 }
 
 /// Convert Cassandra bytes to appropriate JSON value based on column type
 fn convert_cassandra_value(bytes: &[u8], column_type: &str) -> Value {
-    // First try UTF-8 string conversion for text types
-    if column_type.contains("Text") || column_type.contains("Varchar") || column_type.contains("Ascii") {
-        if let Ok(string_value) = String::from_utf8(bytes.to_vec()) {
-            return Value::String(string_value);
+    // Text types
+    if column_type == "varchar" || column_type == "text" || column_type == "ascii" {
+        if let Ok(s) = String::from_utf8(bytes.to_vec()) {
+            return Value::String(s);
         }
     }
-    
-    // Handle numeric types
+
     match column_type {
-        t if t.contains("Int") => {
+        "int" => {
             if bytes.len() == 4 {
-                let value = i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-                return Value::Number(serde_json::Number::from(value));
+                return Value::Number(i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]).into());
             }
         }
-        t if t.contains("Bigint") || t.contains("Counter") => {
+        "bigint" | "counter" => {
             if bytes.len() == 8 {
-                let value = i64::from_be_bytes([
-                    bytes[0], bytes[1], bytes[2], bytes[3],
-                    bytes[4], bytes[5], bytes[6], bytes[7]
-                ]);
-                return Value::Number(serde_json::Number::from(value));
+                let val = i64::from_be_bytes(bytes[..8].try_into().unwrap());
+                return Value::Number(val.into());
             }
         }
-        t if t.contains("Double") => {
+        "smallint" => {
+            if bytes.len() == 2 {
+                return Value::Number(i16::from_be_bytes([bytes[0], bytes[1]]).into());
+            }
+        }
+        "tinyint" => {
+            if bytes.len() == 1 {
+                return Value::Number((bytes[0] as i8).into());
+            }
+        }
+        "double" => {
             if bytes.len() == 8 {
-                let value = f64::from_be_bytes([
-                    bytes[0], bytes[1], bytes[2], bytes[3],
-                    bytes[4], bytes[5], bytes[6], bytes[7]
-                ]);
-                if let Some(num) = serde_json::Number::from_f64(value) {
+                let val = f64::from_be_bytes(bytes[..8].try_into().unwrap());
+                if let Some(num) = serde_json::Number::from_f64(val) {
                     return Value::Number(num);
                 }
             }
         }
-        t if t.contains("Float") => {
+        "float" => {
             if bytes.len() == 4 {
-                let value = f32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-                if let Some(num) = serde_json::Number::from_f64(value as f64) {
+                let val = f32::from_be_bytes(bytes[..4].try_into().unwrap());
+                if let Some(num) = serde_json::Number::from_f64(val as f64) {
                     return Value::Number(num);
                 }
             }
         }
-        t if t.contains("Boolean") => {
+        "decimal" => {
+            // Cassandra decimal: first 4 bytes = scale (i32), rest = unscaled value (varint)
+            if bytes.len() >= 4 {
+                let scale = i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let unscaled_bytes = &bytes[4..];
+                // Convert varint to i64 (simplified, works for most practical values)
+                let mut unscaled: i64 = 0;
+                for &b in unscaled_bytes {
+                    unscaled = (unscaled << 8) | (b as i64);
+                }
+                // Handle negative varint (if high bit is set)
+                if !unscaled_bytes.is_empty() && unscaled_bytes[0] & 0x80 != 0 {
+                    for _ in unscaled_bytes.len()..8 {
+                        unscaled |= 0xFF << (unscaled_bytes.len() * 8 + (7 - unscaled_bytes.len()) * 8);
+                    }
+                    // Sign-extend
+                    let shift = (8 - unscaled_bytes.len()) * 8;
+                    unscaled = (unscaled << shift) >> shift;
+                }
+                let divisor = 10f64.powi(scale);
+                let val = unscaled as f64 / divisor;
+                return Value::String(format!("{:.prec$}", val, prec = scale.max(0) as usize));
+            }
+        }
+        "boolean" => {
             if bytes.len() == 1 {
                 return Value::Bool(bytes[0] != 0);
             }
         }
-        t if t.contains("Uuid") => {
+        "uuid" | "timeuuid" => {
             if bytes.len() == 16 {
                 let mut uuid_bytes = [0u8; 16];
                 uuid_bytes.copy_from_slice(bytes);
-                let uuid = uuid::Uuid::from_bytes(uuid_bytes);
-                return Value::String(uuid.to_string());
+                return Value::String(uuid::Uuid::from_bytes(uuid_bytes).to_string());
             }
+        }
+        "timestamp" => {
+            // Cassandra timestamp: milliseconds since epoch as i64
+            if bytes.len() == 8 {
+                let millis = i64::from_be_bytes(bytes[..8].try_into().unwrap());
+                if let Some(dt) = chrono::DateTime::from_timestamp_millis(millis) {
+                    return Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string());
+                }
+                return Value::Number(millis.into());
+            }
+        }
+        "date" => {
+            // Cassandra date: days since epoch (with offset of 2^31)
+            if bytes.len() == 4 {
+                let days = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                let epoch_days = days as i64 - (1 << 31);
+                if let Some(date) = chrono::NaiveDate::from_num_days_from_ce_opt(epoch_days as i32 + 719_163) {
+                    return Value::String(date.format("%Y-%m-%d").to_string());
+                }
+            }
+        }
+        "inet" => {
+            if bytes.len() == 4 {
+                return Value::String(format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3]));
+            } else if bytes.len() == 16 {
+                let parts: Vec<String> = bytes.chunks(2)
+                    .map(|c| format!("{:02x}{:02x}", c[0], c[1]))
+                    .collect();
+                return Value::String(parts.join(":"));
+            }
+        }
+        "blob" => {
+            return Value::String(format!("0x{}", hex::encode(bytes)));
+        }
+        "set" | "list" => {
+            return Value::String(format!("[{} bytes]", bytes.len()));
+        }
+        "map" => {
+            return Value::String(format!("{{{} bytes}}", bytes.len()));
         }
         _ => {}
     }
-    
-    // Try UTF-8 string as fallback
-    if let Ok(string_value) = String::from_utf8(bytes.to_vec()) {
-        Value::String(string_value)
+
+    // Fallback: try UTF-8, then hex
+    if let Ok(s) = String::from_utf8(bytes.to_vec()) {
+        Value::String(s)
     } else {
-        // Last resort: show as hex for truly binary data
         Value::String(format!("0x{}", hex::encode(bytes)))
     }
 }

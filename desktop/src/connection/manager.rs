@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -6,6 +7,62 @@ use uuid::Uuid;
 
 use super::{CassandraConnection, ConnectionConfig};
 use crate::error::{MagdaError, Result};
+
+/// Wrapper for TOML serialization (TOML requires a root table)
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedConnections {
+    connections: Vec<ConnectionConfig>,
+}
+
+/// Get the path to the connections config file
+fn connections_file_path() -> Option<PathBuf> {
+    directories::ProjectDirs::from("com", "magda", "Magda")
+        .map(|dirs| dirs.config_dir().join("connections.toml"))
+}
+
+/// Save connection configs to disk
+fn persist_configs(configs: &[ConnectionConfig]) {
+    let Some(path) = connections_file_path() else { return };
+
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let saved = SavedConnections { connections: configs.to_vec() };
+    match toml::to_string_pretty(&saved) {
+        Ok(content) => {
+            if let Err(e) = std::fs::write(&path, content) {
+                warn!("Failed to save connections to disk: {}", e);
+            } else {
+                debug!("Saved {} connections to {:?}", configs.len(), path);
+            }
+        }
+        Err(e) => warn!("Failed to serialize connections: {}", e),
+    }
+}
+
+/// Load connection configs from disk
+fn load_persisted_configs() -> Vec<ConnectionConfig> {
+    let Some(path) = connections_file_path() else {
+        return Vec::new();
+    };
+
+    match std::fs::read_to_string(&path) {
+        Ok(content) => {
+            match toml::from_str::<SavedConnections>(&content) {
+                Ok(saved) => {
+                    info!("Loaded {} saved connections from {:?}", saved.connections.len(), path);
+                    saved.connections
+                }
+                Err(e) => {
+                    warn!("Failed to parse connections file: {}", e);
+                    Vec::new()
+                }
+            }
+        }
+        Err(_) => Vec::new(), // File doesn't exist yet, that's fine
+    }
+}
 
 /// Manages multiple Cassandra connections
 pub struct ConnectionManager {
@@ -15,11 +72,12 @@ pub struct ConnectionManager {
 }
 
 impl ConnectionManager {
-    /// Create a new connection manager
+    /// Create a new connection manager, loading any saved connections from disk
     pub fn new() -> Self {
+        let saved_configs = load_persisted_configs();
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
-            configs: Arc::new(RwLock::new(Vec::new())),
+            configs: Arc::new(RwLock::new(saved_configs)),
             active_connection_id: Arc::new(RwLock::new(None)),
         }
     }
@@ -39,8 +97,9 @@ impl ConnectionManager {
         }
         
         configs.push(config);
+        persist_configs(&configs);
         info!("Added connection configuration: {}", id);
-        
+
         Ok(id)
     }
     
@@ -51,7 +110,8 @@ impl ConnectionManager {
         
         let mut configs = self.configs.write().await;
         configs.retain(|c| c.id != id);
-        
+        persist_configs(&configs);
+
         info!("Removed connection configuration: {}", id);
         Ok(())
     }
@@ -189,39 +249,45 @@ impl Default for ConnectionManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
+    /// Create a manager without loading from disk (for isolated tests)
+    fn new_in_memory() -> ConnectionManager {
+        ConnectionManager {
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            configs: Arc::new(RwLock::new(Vec::new())),
+            active_connection_id: Arc::new(RwLock::new(None)),
+        }
+    }
+
     #[tokio::test]
     async fn test_connection_manager_config_operations() {
-        let manager = ConnectionManager::new();
-        
+        let manager = new_in_memory();
+
         let config = ConnectionConfig::new("Test Connection", "localhost");
         let id = manager.add_config(config.clone()).await.unwrap();
-        
-        // Verify config was added
+
         let configs = manager.get_configs().await;
         assert_eq!(configs.len(), 1);
         assert_eq!(configs[0].id, id);
-        
-        // Get specific config
+
         let retrieved = manager.get_config(id).await;
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().name, "Test Connection");
-        
-        // Remove config
+
         manager.remove_config(id).await.unwrap();
         assert_eq!(manager.get_configs().await.len(), 0);
     }
-    
+
     #[tokio::test]
     async fn test_duplicate_connection_names() {
-        let manager = ConnectionManager::new();
-        
+        let manager = new_in_memory();
+
         let config1 = ConnectionConfig::new("Test", "localhost");
         manager.add_config(config1).await.unwrap();
-        
+
         let config2 = ConnectionConfig::new("Test", "127.0.0.1");
         let result = manager.add_config(config2).await;
-        
+
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("already exists"));
     }

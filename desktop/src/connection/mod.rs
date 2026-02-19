@@ -4,7 +4,6 @@ use uuid::Uuid;
 use crate::error::{MagdaError, Result};
 
 pub mod manager;
-pub mod pool;
 
 pub use manager::ConnectionManager;
 
@@ -87,10 +86,17 @@ impl CassandraConnection {
     /// Create a new connection from configuration
     pub async fn connect(config: ConnectionConfig) -> Result<Self> {
         config.validate()?;
-        
+
         // Create session using our cassandra module
         let session = crate::cassandra::create_session(&config.host, config.port).await?;
-        
+
+        // Set the active keyspace if configured
+        if let Some(ref keyspace) = config.keyspace {
+            crate::cassandra::validate_cql_identifier(keyspace)?;
+            tracing::info!("Setting active keyspace to: {}", keyspace);
+            session.query(&format!("USE {}", keyspace)).await?;
+        }
+
         Ok(Self {
             id: config.id,
             config: config.clone(),
@@ -126,6 +132,28 @@ impl CassandraConnection {
         }
     }
     
+    /// Resolve the keyspace to use: configured keyspace, or first non-system keyspace found.
+    pub async fn resolve_keyspace(&self) -> Option<String> {
+        if let Some(ref ks) = self.config.keyspace {
+            return Some(ks.clone());
+        }
+        match self.list_keyspaces().await {
+            Ok(keyspaces) => keyspaces.iter()
+                .find(|ks| !ks.starts_with("system") && !ks.is_empty())
+                .cloned(),
+            Err(_) => None,
+        }
+    }
+
+    /// Describe a table's schema (columns, types, keys)
+    pub async fn describe_table(&self, keyspace: &str, table: &str) -> Result<crate::cassandra::TableSchema> {
+        if let Some(ref session) = self.session {
+            crate::cassandra::describe_table(session, keyspace, table).await
+        } else {
+            Err(MagdaError::ConnectionError("No active session".to_string()))
+        }
+    }
+
     /// Execute a CQL query and return results
     pub async fn execute_query(&self, query: &str) -> Result<crate::components::data_grid::QueryResult> {
         if let Some(ref session) = self.session {

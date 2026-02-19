@@ -16,12 +16,8 @@ pub fn QueryEditor(on_execute: EventHandler<String>, is_executing: Signal<bool>)
                     class: "btn btn-primary",
                     disabled: *is_executing.read(),
                     onclick: move |_| {
-                        std::fs::write("/tmp/magda_debug.log", "🖱️ Execute button clicked\n").ok();
                         if !query_text.read().trim().is_empty() {
-                            std::fs::write("/tmp/magda_debug.log", "📝 Query not empty, calling on_execute\n").ok();
                             on_execute.call(query_text.read().clone());
-                        } else {
-                            std::fs::write("/tmp/magda_debug.log", "📝 Query is empty, not executing\n").ok();
                         }
                     },
                     

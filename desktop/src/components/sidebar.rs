@@ -11,27 +11,11 @@ pub fn Sidebar() -> Element {
     let mut selected_connection = use_signal(|| None::<Uuid>);
     let mut show_connection_dialog = use_signal(|| false);
     
-    // Load connections on mount and create default connection if none exists
+    // Load connections on mount
     use_effect(move || {
         spawn(async move {
             let configs = app_state.read().connection_manager.get_configs().await;
-            
-            // If no connections exist, create a default one for localhost
-            if configs.is_empty() {
-                let default_config = crate::connection::ConnectionConfig::new("Local Cassandra", "localhost")
-                    .with_keyspace("guruband".to_string()); // TODO: This should be configurable
-                
-                if let Ok(_id) = app_state.read().connection_manager.add_config(default_config).await {
-                    tracing::info!("Created default connection to localhost:9042");
-                    // Reload configs
-                    let updated_configs = app_state.read().connection_manager.get_configs().await;
-                    connections.set(updated_configs);
-                } else {
-                    connections.set(configs);
-                }
-            } else {
-                connections.set(configs);
-            }
+            connections.set(configs);
         });
     });
     
@@ -80,16 +64,33 @@ pub fn Sidebar() -> Element {
             // Tables list (shown when connected)
             if let Some(selected_id) = *selected_connection.read() {
                 if let Some(selected_conn) = connections.read().iter().find(|c| c.id == selected_id) {
-                    TablesSection { 
+                    TablesSection {
                         connection_name: selected_conn.name.clone()
                     }
                 }
             }
-            
-            // Show connection dialog if needed (commented out for now)
-            // if *show_connection_dialog.read() {
-            //     div { "Connection dialog coming soon" }
-            // }
+
+            // Connection dialog
+            if *show_connection_dialog.read() {
+                super::connection_dialog::ConnectionDialog {
+                    on_close: move |_| show_connection_dialog.set(false),
+                    on_save: move |config: ConnectionConfig| {
+                        show_connection_dialog.set(false);
+                        spawn(async move {
+                            match app_state.read().connection_manager.add_config(config).await {
+                                Ok(_) => {
+                                    tracing::info!("Connection saved successfully");
+                                    let updated = app_state.read().connection_manager.get_configs().await;
+                                    connections.set(updated);
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to save connection: {}", e);
+                                }
+                            }
+                        });
+                    }
+                }
+            }
         }
     }
 }
@@ -158,19 +159,19 @@ fn ConnectionItem(
                             is_connecting.set(true);
                             let id = connection.id;
                             let conn_name = connection.name.clone();
-                            tracing::info!("🔌 User clicked Connect button for: {}", conn_name);
+                            tracing::info!("Connecting to: {}", conn_name);
                             spawn(async move {
-                                tracing::debug!("📡 Attempting to connect to: {} (id: {})", conn_name, id);
+                                tracing::debug!("Attempting to connect to: {} (id: {})", conn_name, id);
                                 match app_state.read()
                                     .connection_manager
                                     .connect(id)
                                     .await {
                                     Ok(_) => {
-                                        tracing::info!("✅ Successfully connected to: {}", conn_name);
+                                        tracing::info!("Connected to: {}", conn_name);
                                         is_connected.set(true);
                                     }
                                     Err(e) => {
-                                        tracing::error!("❌ Failed to connect to {}: {}", conn_name, e);
+                                        tracing::error!("Failed to connect to {}: {}", conn_name, e);
                                     }
                                 }
                                 is_connecting.set(false);
@@ -209,39 +210,22 @@ fn TablesSection(connection_name: String) -> Element {
     let mut selected_table = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
     
-    // Load real tables from Cassandra
     use_effect(move || {
-        tracing::info!("🔄 TablesSection effect triggered for connection: {}", connection_name);
         loading.set(true);
         spawn(async move {
-            tracing::debug!("📡 Attempting to get active connection...");
-            
-            // Get active connection from app state
-            if let Some(connection) = app_state.read().connection_manager.get_active_connection().await {
-                // Get the keyspace from connection config
-                if let Some(keyspace) = &connection.config.keyspace {
-                    tracing::info!("✅ Got active connection, listing tables from '{}' keyspace", keyspace);
-                    
-                    // List tables from the configured keyspace
-                    match connection.list_tables(keyspace).await {
-                        Ok(real_tables) => {
-                            tracing::info!("✅ Successfully loaded {} tables from '{}' keyspace", real_tables.len(), keyspace);
-                            for table in &real_tables {
-                                tracing::debug!("  - Table: {}", table);
-                            }
-                            tables.set(real_tables);
-                        }
+            if let Some(conn) = app_state.read().connection_manager.get_active_connection().await {
+                if let Some(keyspace) = conn.resolve_keyspace().await {
+                    match conn.list_tables(&keyspace).await {
+                        Ok(t) => tables.set(t),
                         Err(e) => {
-                            tracing::error!("❌ Failed to load tables from keyspace '{}': {}", keyspace, e);
+                            tracing::error!("Failed to list tables for keyspace '{}': {}", keyspace, e);
                             tables.set(Vec::new());
                         }
                     }
                 } else {
-                    tracing::warn!("⚠️ No keyspace configured for connection - cannot list tables");
                     tables.set(Vec::new());
                 }
             } else {
-                tracing::warn!("⚠️ No active connection found - cannot list tables");
                 tables.set(Vec::new());
             }
             loading.set(false);

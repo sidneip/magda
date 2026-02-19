@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use serde_json::Value;
 
-use crate::state::AppState;
+use crate::state::{AppState, DEFAULT_PAGE_SIZE};
 
 #[derive(Clone, Debug)]
 pub struct ColumnInfo {
@@ -36,31 +36,21 @@ pub fn DataGrid(
             let table_clone = table.clone();
             spawn(async move {
                 if let Some(connection) = app_state.read().connection_manager.get_active_connection().await {
-                    // Use the keyspace from connection config, or find a suitable one
-                    let keyspace_to_use = if let Some(keyspace) = &connection.config.keyspace {
-                        Some(keyspace.clone())
-                    } else {
-                        // No keyspace configured, let's find available keyspaces and use the first non-system one
-                        match connection.list_keyspaces().await {
-                            Ok(keyspaces) => {
-                                // Look for "guruband" first (user's keyspace), then any non-system keyspace
-                                if keyspaces.contains(&"guruband".to_string()) {
-                                    Some("guruband".to_string())
-                                } else {
-                                    keyspaces.iter()
-                                        .find(|ks| !ks.starts_with("system") && !ks.is_empty())
-                                        .cloned()
-                                }
-                            }
-                            Err(e) => {
-                                tracing::error!("❌ Failed to list keyspaces for data grid: {}", e);
-                                None
-                            }
+                    if let Some(keyspace) = connection.resolve_keyspace().await {
+                        // Validate identifiers before interpolating into CQL
+                        if let Err(e) = crate::cassandra::validate_cql_identifier(&keyspace) {
+                            tracing::error!("Invalid keyspace name: {}", e);
+                            query_result.set(None);
+                            loading.set(false);
+                            return;
                         }
-                    };
-                    
-                    if let Some(keyspace) = keyspace_to_use {
-                        let query = format!("SELECT * FROM {}.{} LIMIT 100", keyspace, table_clone);
+                        if let Err(e) = crate::cassandra::validate_cql_identifier(&table_clone) {
+                            tracing::error!("Invalid table name: {}", e);
+                            query_result.set(None);
+                            loading.set(false);
+                            return;
+                        }
+                        let query = format!("SELECT * FROM {}.{} LIMIT {}", keyspace, table_clone, DEFAULT_PAGE_SIZE);
                         match connection.execute_query(&query).await {
                             Ok(result) => {
                                 tracing::info!("Loaded {} rows from table {} in keyspace {}", result.row_count, table_clone, keyspace);

@@ -4,6 +4,12 @@ use uuid::Uuid;
 
 use crate::connection::ConnectionManager;
 
+/// Default number of rows per page in query results
+pub const DEFAULT_PAGE_SIZE: u32 = 100;
+
+/// Maximum number of query history entries to retain
+pub const MAX_QUERY_HISTORY: usize = 100;
+
 /// Global application state
 #[derive(Clone)]
 pub struct AppState {
@@ -41,8 +47,7 @@ impl AppState {
         let mut history = query_history.write();
         history.push(item);
         
-        // Keep only the last 100 queries
-        if history.len() > 100 {
+        if history.len() > MAX_QUERY_HISTORY {
             history.remove(0);
         }
     }
