@@ -68,7 +68,7 @@ pub fn QueryEditor(on_execute: EventHandler<String>, is_executing: Signal<bool>)
                         oninput: move |e| save_name.set(e.value()),
                         onkeydown: move |e| {
                             if e.key() == Key::Enter && !save_name.read().trim().is_empty() {
-                                let mut saved = app_state.read().saved_queries.clone();
+                                let mut saved = app_state.read().saved_queries;
                                 saved.write().push(SavedQuery {
                                     id: uuid::Uuid::new_v4(),
                                     name: save_name.read().trim().to_string(),
@@ -88,7 +88,7 @@ pub fn QueryEditor(on_execute: EventHandler<String>, is_executing: Signal<bool>)
                         disabled: save_name.read().trim().is_empty(),
                         onclick: move |_| {
                             if !save_name.read().trim().is_empty() {
-                                let mut saved = app_state.read().saved_queries.clone();
+                                let mut saved = app_state.read().saved_queries;
                                 saved.write().push(SavedQuery {
                                     id: uuid::Uuid::new_v4(),
                                     name: save_name.read().trim().to_string(),

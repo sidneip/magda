@@ -1,10 +1,10 @@
 use dioxus::prelude::*;
 
-use crate::state::{ActiveTab, AppState, QueryVariable, DEFAULT_PAGE_SIZE};
-use super::query_editor::QueryEditor;
 use super::data_grid::DataGrid;
+use super::query_editor::QueryEditor;
 use super::schema_viewer::SchemaViewer;
 use super::variables_panel::VariablesPanel;
+use crate::state::{ActiveTab, AppState, QueryVariable, DEFAULT_PAGE_SIZE};
 
 fn substitute_variables(query: &str, vars: &[QueryVariable]) -> String {
     let mut result = query.to_string();
@@ -19,34 +19,34 @@ fn substitute_variables(query: &str, vars: &[QueryVariable]) -> String {
 #[component]
 pub fn Workspace() -> Element {
     let app_state = use_context::<Signal<AppState>>();
-    let mut active_tab = app_state.read().active_tab.clone();
-    
+    let mut active_tab = app_state.read().active_tab;
+
     rsx! {
         div {
             class: "workspace",
-            
+
             // Tab bar
             div {
                 class: "tab-bar",
-                
+
                 TabButton {
                     label: "Query",
                     is_active: *active_tab.read() == ActiveTab::Query,
                     onclick: move |_| active_tab.set(ActiveTab::Query)
                 }
-                
+
                 TabButton {
                     label: "Data",
                     is_active: *active_tab.read() == ActiveTab::Data,
                     onclick: move |_| active_tab.set(ActiveTab::Data)
                 }
-                
+
                 TabButton {
                     label: "Schema",
                     is_active: *active_tab.read() == ActiveTab::Schema,
                     onclick: move |_| active_tab.set(ActiveTab::Schema)
                 }
-                
+
                 TabButton {
                     label: "History",
                     is_active: *active_tab.read() == ActiveTab::History,
@@ -59,11 +59,11 @@ pub fn Workspace() -> Element {
                     onclick: move |_| active_tab.set(ActiveTab::Variables)
                 }
             }
-            
+
             // Tab content
             div {
                 class: "tab-content",
-                
+
                 match *active_tab.read() {
                     ActiveTab::Query => rsx! {
                         QueryWorkspace {}
@@ -87,11 +87,7 @@ pub fn Workspace() -> Element {
 }
 
 #[component]
-fn TabButton(
-    label: &'static str,
-    is_active: bool,
-    onclick: EventHandler<MouseEvent>
-) -> Element {
+fn TabButton(label: &'static str, is_active: bool, onclick: EventHandler<MouseEvent>) -> Element {
     rsx! {
         button {
             class: format!("tab-button {}", if is_active { "active" } else { "" }),
@@ -110,7 +106,7 @@ fn QueryWorkspace() -> Element {
     let mut query_error = use_signal(|| None::<String>);
     let mut is_executing = use_signal(|| false);
     let mut current_page = use_signal(|| 1u32);
-    let mut original_query = use_signal(|| String::new());
+    let mut original_query = use_signal(String::new);
 
     let page_size = DEFAULT_PAGE_SIZE as usize;
 
@@ -121,9 +117,19 @@ fn QueryWorkspace() -> Element {
             let start = ((*current_page.read() as usize) - 1) * page_size;
             let end = (start + page_size).min(result.rows.len());
             if start < result.rows.len() {
-                Some((result.columns.clone(), result.rows[start..end].to_vec(), result.execution_time_ms, result.row_count))
+                Some((
+                    result.columns.clone(),
+                    result.rows[start..end].to_vec(),
+                    result.execution_time_ms,
+                    result.row_count,
+                ))
             } else {
-                Some((result.columns.clone(), vec![], result.execution_time_ms, result.row_count))
+                Some((
+                    result.columns.clone(),
+                    vec![],
+                    result.execution_time_ms,
+                    result.row_count,
+                ))
             }
         } else {
             None
@@ -132,10 +138,13 @@ fn QueryWorkspace() -> Element {
 
     let total_pages = {
         let cached = cached_result.read();
-        cached.as_ref().map(|r| {
-            let total = r.rows.len();
-            ((total + page_size - 1) / page_size).max(1) as u32
-        }).unwrap_or(1)
+        cached
+            .as_ref()
+            .map(|r| {
+                let total = r.rows.len();
+                total.div_ceil(page_size).max(1) as u32
+            })
+            .unwrap_or(1)
     };
 
     // Execute query: fetch all rows once and cache them
@@ -157,7 +166,11 @@ fn QueryWorkspace() -> Element {
                 match connection.execute_query(&substituted).await {
                     Ok(result) => {
                         let execution_time = result.execution_time_ms;
-                        tracing::info!("Query returned {} rows in {}ms", result.row_count, execution_time);
+                        tracing::info!(
+                            "Query returned {} rows in {}ms",
+                            result.row_count,
+                            execution_time
+                        );
                         cached_result.set(Some(result));
 
                         // Store original query with placeholders in history
@@ -358,12 +371,13 @@ fn QueryWorkspace() -> Element {
 #[component]
 fn DataWorkspace() -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
-    let selected_table = app_state.read().selected_table.clone();
-    let mut tables = use_signal(|| Vec::<String>::new());
-    
+    let selected_table = app_state.read().selected_table;
+    let mut tables = use_signal(Vec::<String>::new);
+
     use_effect(move || {
         spawn(async move {
-            if let Some(conn) = app_state.read().connection_manager.get_active_connection().await {
+            let cm = app_state.read().connection_manager.clone();
+            if let Some(conn) = cm.get_active_connection().await {
                 if let Some(keyspace) = conn.resolve_keyspace().await {
                     match conn.list_tables(&keyspace).await {
                         Ok(t) => tables.set(t),
@@ -375,18 +389,18 @@ fn DataWorkspace() -> Element {
             }
         });
     });
-    
+
     rsx! {
         div {
             class: "data-workspace",
-            
+
             // Table selector and actions
             div {
                 class: "data-toolbar",
-                
+
                 div {
                     class: "table-selector",
-                    
+
                     select {
                         class: "select-table",
                         value: "{selected_table.read().as_ref().unwrap_or(&String::new())}",
@@ -394,17 +408,17 @@ fn DataWorkspace() -> Element {
                             let value = if e.value().is_empty() { None } else { Some(e.value()) };
                             app_state.write().selected_table.set(value);
                         },
-                        
+
                         option { value: "", "Select a table..." }
-                        
+
                         for table in tables.read().iter() {
-                            option { 
+                            option {
                                 value: "{table}",
-                                "{table}" 
+                                "{table}"
                             }
                         }
                     }
-                    
+
                     if selected_table.read().is_some() {
                         span {
                             class: "auto-load-info",
@@ -412,10 +426,10 @@ fn DataWorkspace() -> Element {
                         }
                     }
                 }
-                
+
                 div {
                     class: "data-actions",
-                    
+
                     if let Some(table_name) = selected_table.read().as_ref() {
                         span {
                             class: "current-table",
@@ -424,7 +438,7 @@ fn DataWorkspace() -> Element {
                     }
                 }
             }
-            
+
             // Data grid
             DataGrid {
                 table_name: selected_table.read().clone()
@@ -436,7 +450,7 @@ fn DataWorkspace() -> Element {
 #[component]
 fn HistoryWorkspace() -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
-    let history = app_state.read().query_history.clone();
+    let history = app_state.read().query_history;
 
     rsx! {
         div {

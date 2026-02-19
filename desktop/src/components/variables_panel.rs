@@ -6,7 +6,7 @@ use crate::state::{AppState, QueryVariable};
 #[component]
 pub fn VariablesPanel() -> Element {
     let app_state = use_context::<Signal<AppState>>();
-    let mut variables = app_state.read().query_variables.clone();
+    let mut variables = app_state.read().query_variables;
 
     let add_variable = move |_| {
         variables.write().push(QueryVariable {

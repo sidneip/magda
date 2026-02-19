@@ -18,24 +18,23 @@ pub struct QueryResult {
 }
 
 #[component]
-pub fn DataGrid(
-    #[props(optional)] table_name: Option<String>
-) -> Element {
+pub fn DataGrid(#[props(optional)] table_name: Option<String>) -> Element {
     let app_state = use_context::<Signal<AppState>>();
     let mut query_result = use_signal(|| None::<QueryResult>);
     let mut selected_row = use_signal(|| None::<usize>);
     let mut loading = use_signal(|| false);
-    
+
     // Load table data when table_name changes
     use_effect(use_reactive!(|table_name| {
         // Clear previous results when table changes
         query_result.set(None);
-        
+
         if let Some(ref table) = table_name {
             loading.set(true);
             let table_clone = table.clone();
             spawn(async move {
-                if let Some(connection) = app_state.read().connection_manager.get_active_connection().await {
+                let cm = app_state.read().connection_manager.clone();
+                if let Some(connection) = cm.get_active_connection().await {
                     if let Some(keyspace) = connection.resolve_keyspace().await {
                         // Validate identifiers before interpolating into CQL
                         if let Err(e) = crate::cassandra::validate_cql_identifier(&keyspace) {
@@ -50,14 +49,26 @@ pub fn DataGrid(
                             loading.set(false);
                             return;
                         }
-                        let query = format!("SELECT * FROM {}.{} LIMIT {}", keyspace, table_clone, DEFAULT_PAGE_SIZE);
+                        let query = format!(
+                            "SELECT * FROM {}.{} LIMIT {}",
+                            keyspace, table_clone, DEFAULT_PAGE_SIZE
+                        );
                         match connection.execute_query(&query).await {
                             Ok(result) => {
-                                tracing::info!("Loaded {} rows from table {} in keyspace {}", result.row_count, table_clone, keyspace);
+                                tracing::info!(
+                                    "Loaded {} rows from table {} in keyspace {}",
+                                    result.row_count,
+                                    table_clone,
+                                    keyspace
+                                );
                                 query_result.set(Some(result));
                             }
                             Err(e) => {
-                                tracing::error!("Failed to load data from table {}: {}", table_clone, e);
+                                tracing::error!(
+                                    "Failed to load data from table {}: {}",
+                                    table_clone,
+                                    e
+                                );
                                 query_result.set(None);
                             }
                         }
@@ -75,18 +86,18 @@ pub fn DataGrid(
             loading.set(false);
         }
     }));
-    
+
     rsx! {
         div {
             class: "data-grid",
-            
+
             // Results header
             div {
                 class: "results-header",
-                
+
                 div {
                     class: "results-info",
-                    
+
                     if *loading.read() {
                         span { "Loading..." }
                     } else if let Some(result) = query_result.read().as_ref() {
@@ -101,7 +112,7 @@ pub fn DataGrid(
                         span { "Select a table to view data" }
                     }
                 }
-                
+
                 div {
                     class: "results-actions",
 
@@ -132,14 +143,14 @@ pub fn DataGrid(
                     }
                 }
             }
-            
+
             // Table container
             div {
                 class: "table-container",
-                
+
                 table {
                     class: "data-table",
-                    
+
                     if let Some(result) = query_result.read().as_ref() {
                         // Table header
                         thead {
@@ -148,12 +159,12 @@ pub fn DataGrid(
                                     th {
                                         div {
                                             class: "column-header",
-                                            
+
                                             span {
                                                 class: "column-name",
                                                 "{column.name}"
                                             }
-                                            
+
                                             span {
                                                 class: "column-type",
                                                 "{column.data_type}"
@@ -163,7 +174,7 @@ pub fn DataGrid(
                                 }
                             }
                         }
-                        
+
                         // Table body
                         tbody {
                             if result.rows.is_empty() {
@@ -180,7 +191,7 @@ pub fn DataGrid(
                                         key: "{idx}",
                                         class: if *selected_row.read() == Some(idx) { "selected" } else { "" },
                                         onclick: move |_| selected_row.set(Some(idx)),
-                                        
+
                                         for (col_idx, value) in row.iter().enumerate() {
                                             td {
                                                 key: "{col_idx}",
@@ -205,22 +216,22 @@ pub fn DataGrid(
                     }
                 }
             }
-            
+
             // Pagination
             div {
                 class: "pagination",
-                
+
                 button {
                     class: "btn-icon",
                     disabled: true,
                     "◀"
                 }
-                
+
                 span {
                     class: "page-info",
                     "Page 1 of 1"
                 }
-                
+
                 button {
                     class: "btn-icon",
                     disabled: true,

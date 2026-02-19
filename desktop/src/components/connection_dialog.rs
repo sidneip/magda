@@ -1,10 +1,10 @@
-use dioxus::prelude::*;
 use crate::connection::ConnectionConfig;
+use dioxus::prelude::*;
 
 #[component]
 pub fn ConnectionDialog(
     on_close: EventHandler<()>,
-    on_save: EventHandler<ConnectionConfig>
+    on_save: EventHandler<ConnectionConfig>,
 ) -> Element {
     let mut name = use_signal(String::new);
     let mut host = use_signal(|| "localhost".to_string());
@@ -13,16 +13,16 @@ pub fn ConnectionDialog(
     let mut password = use_signal(String::new);
     let mut keyspace = use_signal(String::new);
     let mut validation_error = use_signal(|| None::<String>);
-    
+
     rsx! {
         div {
             class: "modal-backdrop",
             onclick: move |_| on_close.call(()),
-            
+
             div {
                 class: "modal",
                 onclick: move |e| e.stop_propagation(),
-                
+
                 div {
                     class: "modal-header",
                     h2 { "New Connection" }
@@ -32,10 +32,10 @@ pub fn ConnectionDialog(
                         "×"
                     }
                 }
-                
+
                 div {
                     class: "modal-body",
-                    
+
                     div {
                         class: "form-group",
                         label { "Name" }
@@ -46,7 +46,7 @@ pub fn ConnectionDialog(
                             placeholder: "My Cassandra Cluster"
                         }
                     }
-                    
+
                     div {
                         class: "form-row",
                         div {
@@ -59,7 +59,7 @@ pub fn ConnectionDialog(
                                 placeholder: "localhost"
                             }
                         }
-                        
+
                         div {
                             class: "form-group form-group-small",
                             label { "Port" }
@@ -71,7 +71,7 @@ pub fn ConnectionDialog(
                             }
                         }
                     }
-                    
+
                     div {
                         class: "form-group",
                         label { "Username (optional)" }
@@ -81,7 +81,7 @@ pub fn ConnectionDialog(
                             oninput: move |e| username.set(e.value())
                         }
                     }
-                    
+
                     div {
                         class: "form-group",
                         label { "Password (optional)" }
@@ -91,7 +91,7 @@ pub fn ConnectionDialog(
                             oninput: move |e| password.set(e.value())
                         }
                     }
-                    
+
                     div {
                         class: "form-group",
                         label { "Default Keyspace (optional)" }
@@ -102,7 +102,7 @@ pub fn ConnectionDialog(
                         }
                     }
                 }
-                
+
                 // Validation error message
                 if let Some(error) = validation_error.read().as_ref() {
                     div {

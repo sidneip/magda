@@ -1,9 +1,9 @@
 pub mod cassandra;
+pub mod config;
+pub mod connection;
 pub mod cql_tokenizer;
 pub mod error;
 pub mod state;
-pub mod connection;
-pub mod config;
 pub mod components {
     pub mod code_editor;
     pub mod connection_dialog;

@@ -31,35 +31,155 @@ pub struct Token {
 // ── Sorted lookup tables (binary_search, no deps) ──────────────
 
 static CQL_KEYWORDS: &[&str] = &[
-    "ADD", "ALL", "ALLOW", "ALTER", "AND", "ANY", "APPLY", "AS", "ASC",
-    "AUTHORIZE", "BATCH", "BEGIN", "BY", "CALLED", "CLUSTERING",
-    "COLUMNFAMILY", "COMPACT", "CONTAINS", "CREATE", "CUSTOM",
-    "DELETE", "DESC", "DESCRIBE", "DISTINCT", "DROP", "EACH_QUORUM",
-    "ENTRIES", "EXECUTE", "EXISTS", "FILTERING", "FINALFUNC", "FROM",
-    "FULL", "GRANT", "IF", "IN", "INDEX", "INITCOND", "INPUT", "INSERT",
-    "INTO", "IS", "JSON", "KEY", "KEYSPACE", "KEYSPACES", "LANGUAGE",
-    "LIMIT", "LOCAL_ONE", "LOCAL_QUORUM", "LOGGED", "LOGIN",
-    "MATERIALIZED", "MODIFY", "NORECURSIVE", "NOSUPERUSER", "NOT",
-    "NULL", "OF", "ON", "ONE", "OR", "ORDER", "PARTITION", "PASSWORD",
-    "PER", "PERMISSION", "PERMISSIONS", "PRIMARY", "QUORUM", "RENAME",
-    "REPLACE", "RETURNS", "REVOKE", "SCHEMA", "SELECT", "SET", "SFUNC",
-    "STATIC", "STORAGE", "STYPE", "SUPERUSER", "TABLE", "THREE",
-    "TO", "TOKEN", "TRIGGER", "TRUNCATE", "TTL", "TWO", "TYPE",
-    "UNLOGGED", "UPDATE", "USE", "USER", "USERS", "USING", "VALUES",
-    "VIEW", "WHERE", "WITH", "WRITETIME",
+    "ADD",
+    "ALL",
+    "ALLOW",
+    "ALTER",
+    "AND",
+    "ANY",
+    "APPLY",
+    "AS",
+    "ASC",
+    "AUTHORIZE",
+    "BATCH",
+    "BEGIN",
+    "BY",
+    "CALLED",
+    "CLUSTERING",
+    "COLUMNFAMILY",
+    "COMPACT",
+    "CONTAINS",
+    "CREATE",
+    "CUSTOM",
+    "DELETE",
+    "DESC",
+    "DESCRIBE",
+    "DISTINCT",
+    "DROP",
+    "EACH_QUORUM",
+    "ENTRIES",
+    "EXECUTE",
+    "EXISTS",
+    "FILTERING",
+    "FINALFUNC",
+    "FROM",
+    "FULL",
+    "GRANT",
+    "IF",
+    "IN",
+    "INDEX",
+    "INITCOND",
+    "INPUT",
+    "INSERT",
+    "INTO",
+    "IS",
+    "JSON",
+    "KEY",
+    "KEYSPACE",
+    "KEYSPACES",
+    "LANGUAGE",
+    "LIMIT",
+    "LOCAL_ONE",
+    "LOCAL_QUORUM",
+    "LOGGED",
+    "LOGIN",
+    "MATERIALIZED",
+    "MODIFY",
+    "NORECURSIVE",
+    "NOSUPERUSER",
+    "NOT",
+    "NULL",
+    "OF",
+    "ON",
+    "ONE",
+    "OR",
+    "ORDER",
+    "PARTITION",
+    "PASSWORD",
+    "PER",
+    "PERMISSION",
+    "PERMISSIONS",
+    "PRIMARY",
+    "QUORUM",
+    "RENAME",
+    "REPLACE",
+    "RETURNS",
+    "REVOKE",
+    "SCHEMA",
+    "SELECT",
+    "SET",
+    "SFUNC",
+    "STATIC",
+    "STORAGE",
+    "STYPE",
+    "SUPERUSER",
+    "TABLE",
+    "THREE",
+    "TO",
+    "TOKEN",
+    "TRIGGER",
+    "TRUNCATE",
+    "TTL",
+    "TWO",
+    "TYPE",
+    "UNLOGGED",
+    "UPDATE",
+    "USE",
+    "USER",
+    "USERS",
+    "USING",
+    "VALUES",
+    "VIEW",
+    "WHERE",
+    "WITH",
+    "WRITETIME",
 ];
 
 static CQL_TYPES: &[&str] = &[
-    "ASCII", "BIGINT", "BLOB", "BOOLEAN", "COUNTER", "DATE", "DECIMAL",
-    "DOUBLE", "DURATION", "FLOAT", "FROZEN", "INET", "INT", "LIST",
-    "MAP", "SET", "SMALLINT", "TEXT", "TIME", "TIMESTAMP", "TIMEUUID",
-    "TINYINT", "TUPLE", "UUID", "VARCHAR", "VARINT",
+    "ASCII",
+    "BIGINT",
+    "BLOB",
+    "BOOLEAN",
+    "COUNTER",
+    "DATE",
+    "DECIMAL",
+    "DOUBLE",
+    "DURATION",
+    "FLOAT",
+    "FROZEN",
+    "INET",
+    "INT",
+    "LIST",
+    "MAP",
+    "SET",
+    "SMALLINT",
+    "TEXT",
+    "TIME",
+    "TIMESTAMP",
+    "TIMEUUID",
+    "TINYINT",
+    "TUPLE",
+    "UUID",
+    "VARCHAR",
+    "VARINT",
 ];
 
 static CQL_FUNCTIONS: &[&str] = &[
-    "AVG", "CAST", "COUNT", "DATEOF", "FROMJSON", "MAX", "MIN",
-    "NOW", "SUM", "TOJSON", "TOKEN", "TOUNIXTIMESTAMP", "TTL",
-    "UUID", "WRITETIME",
+    "AVG",
+    "CAST",
+    "COUNT",
+    "DATEOF",
+    "FROMJSON",
+    "MAX",
+    "MIN",
+    "NOW",
+    "SUM",
+    "TOJSON",
+    "TOKEN",
+    "TOUNIXTIMESTAMP",
+    "TTL",
+    "UUID",
+    "WRITETIME",
 ];
 
 fn is_keyword(word: &str) -> bool {
@@ -234,7 +354,10 @@ pub fn tokenize(source: &str) -> Vec<Token> {
         }
 
         // 9. Operators
-        if matches!(b, b'=' | b'<' | b'>' | b'!' | b'+' | b'-' | b'*' | b'/' | b'.') {
+        if matches!(
+            b,
+            b'=' | b'<' | b'>' | b'!' | b'+' | b'-' | b'*' | b'/' | b'.'
+        ) {
             // Handle two-char operators: !=, <=, >=
             if i + 1 < len && bytes[i + 1] == b'=' && matches!(b, b'!' | b'<' | b'>') {
                 i += 2;
@@ -250,7 +373,10 @@ pub fn tokenize(source: &str) -> Vec<Token> {
         }
 
         // 10. Punctuation
-        if matches!(b, b';' | b',' | b'(' | b')' | b'[' | b']' | b'{' | b'}' | b':') {
+        if matches!(
+            b,
+            b';' | b',' | b'(' | b')' | b'[' | b']' | b'{' | b'}' | b':'
+        ) {
             i += 1;
             tokens.push(Token {
                 kind: TokenKind::Punctuation,
@@ -393,8 +519,10 @@ mod tests {
         assert_eq!(kinds[0], TokenKind::Keyword); // SELECT
         assert_eq!(kinds[2], TokenKind::Operator); // *
         assert_eq!(kinds[4], TokenKind::Keyword); // FROM
-        // 'hello' should be String
-        assert!(tokens.iter().any(|t| t.kind == TokenKind::String && t.text == "'hello'"));
+                                                  // 'hello' should be String
+        assert!(tokens
+            .iter()
+            .any(|t| t.kind == TokenKind::String && t.text == "'hello'"));
     }
 
     #[test]
@@ -407,14 +535,20 @@ mod tests {
     #[test]
     fn tokenize_variable() {
         let tokens = tokenize("SELECT * FROM {{table_name}}");
-        assert!(tokens.iter().any(|t| t.kind == TokenKind::Variable && t.text == "{{table_name}}"));
+        assert!(tokens
+            .iter()
+            .any(|t| t.kind == TokenKind::Variable && t.text == "{{table_name}}"));
     }
 
     #[test]
     fn tokenize_types() {
         let tokens = tokenize("CREATE TABLE t (id uuid, name text)");
-        assert!(tokens.iter().any(|t| t.kind == TokenKind::Type && t.text.eq_ignore_ascii_case("uuid")));
-        assert!(tokens.iter().any(|t| t.kind == TokenKind::Type && t.text.eq_ignore_ascii_case("text")));
+        assert!(tokens
+            .iter()
+            .any(|t| t.kind == TokenKind::Type && t.text.eq_ignore_ascii_case("uuid")));
+        assert!(tokens
+            .iter()
+            .any(|t| t.kind == TokenKind::Type && t.text.eq_ignore_ascii_case("text")));
     }
 
     #[test]

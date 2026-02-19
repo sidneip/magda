@@ -1,14 +1,7 @@
 use dioxus::prelude::*;
 
-mod cassandra;
-mod config;
-mod connection;
-mod cql_tokenizer;
-mod error;
-mod state;
-mod components;
-
-use crate::state::AppState;
+use magda_desktop::components;
+use magda_desktop::state::AppState;
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 
@@ -64,31 +57,31 @@ fn set_macos_dock_icon() {
 fn App() -> Element {
     // Initialize shared application state
     use_context_provider(|| Signal::new(AppState::new()));
-    
+
     rsx! {
         // Global app resources
         document::Title { "Magda" }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
-        
+
         div {
             class: "app-container",
-            
+
             // Main layout with sidebar and content area
             div {
                 class: "main-layout",
-                
+
                 // Sidebar with connection explorer
                 components::sidebar::Sidebar {}
-                
+
                 // Main content area
                 div {
                     class: "content-area",
-                    
+
                     // Query editor and results
                     components::workspace::Workspace {}
                 }
             }
-            
+
             // Status bar at the bottom
             components::statusbar::StatusBar {}
         }
@@ -98,7 +91,7 @@ fn App() -> Element {
 /// Initialize the application logger with environment-based configuration
 fn init_logger() {
     use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-    
+
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -109,7 +102,7 @@ fn init_logger() {
                 .with_target(true)
                 .with_thread_ids(true)
                 .with_file(true)
-                .with_line_number(true)
+                .with_line_number(true),
         )
         .init();
 }

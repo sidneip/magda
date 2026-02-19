@@ -81,7 +81,7 @@ pub fn CodeEditor(
 
             // Check if we're in a table-name context
             let prev_kw = cql_tokenizer::keyword_before_cursor(&text, cursor);
-            let in_table_ctx = prev_kw.as_deref().map_or(false, is_table_context);
+            let in_table_ctx = prev_kw.as_deref().is_some_and(is_table_context);
 
             let mut items: Vec<String> = Vec::new();
 
@@ -128,9 +128,7 @@ pub fn CodeEditor(
         let partial_end = {
             let bytes = text.as_bytes();
             let mut end = word_start;
-            while end < bytes.len()
-                && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_')
-            {
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
                 end += 1;
             }
             end
@@ -168,8 +166,7 @@ pub fn CodeEditor(
         let is_ac = *ac_visible.read();
 
         // Ctrl+Enter / Cmd+Enter → execute
-        if (e.modifiers().contains(Modifiers::CONTROL)
-            || e.modifiers().contains(Modifiers::META))
+        if (e.modifiers().contains(Modifiers::CONTROL) || e.modifiers().contains(Modifiers::META))
             && e.key() == Key::Enter
         {
             ac_visible.set(false);

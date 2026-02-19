@@ -2,12 +2,15 @@ use magda_desktop::cassandra;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter("debug")
-        .init();
+    tracing_subscriber::fmt().with_env_filter("debug").init();
 
-    let host = std::env::args().nth(1).unwrap_or_else(|| "localhost".to_string());
-    let port: u16 = std::env::args().nth(2).and_then(|p| p.parse().ok()).unwrap_or(9042);
+    let host = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "localhost".to_string());
+    let port: u16 = std::env::args()
+        .nth(2)
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(9042);
 
     println!("Testing Cassandra connection to {}:{}", host, port);
 

@@ -11,28 +11,29 @@ pub fn Sidebar() -> Element {
     let mut connections = use_signal(Vec::<ConnectionConfig>::new);
     let mut selected_connection = use_signal(|| None::<Uuid>);
     let mut show_connection_dialog = use_signal(|| false);
-    
+
     // Load connections on mount
     use_effect(move || {
         spawn(async move {
-            let configs = app_state.read().connection_manager.get_configs().await;
+            let cm = app_state.read().connection_manager.clone();
+            let configs = cm.get_configs().await;
             connections.set(configs);
         });
     });
-    
+
     rsx! {
         div {
             class: "sidebar",
-            
+
             // Header with title and add button
             div {
                 class: "sidebar-header",
-                
-                h3 { 
+
+                h3 {
                     class: "sidebar-title",
-                    "Connections" 
+                    "Connections"
                 }
-                
+
                 button {
                     class: "btn-icon",
                     onclick: move |_| show_connection_dialog.set(true),
@@ -40,11 +41,11 @@ pub fn Sidebar() -> Element {
                     "+"
                 }
             }
-            
+
             // Connection list
             div {
                 class: "connection-list",
-                
+
                 for connection in connections.read().iter() {
                     ConnectionItem {
                         connection: connection.clone(),
@@ -52,16 +53,14 @@ pub fn Sidebar() -> Element {
                         on_select: move |id| {
                             selected_connection.set(Some(id));
                             spawn(async move {
-                                let _ = app_state.read()
-                                    .connection_manager
-                                    .set_active_connection(id)
-                                    .await;
+                                let cm = app_state.read().connection_manager.clone();
+                                let _ = cm.set_active_connection(id).await;
                             });
                         }
                     }
                 }
             }
-            
+
             // Tables list (shown when connected)
             if let Some(selected_id) = *selected_connection.read() {
                 if let Some(selected_conn) = connections.read().iter().find(|c| c.id == selected_id) {
@@ -81,10 +80,11 @@ pub fn Sidebar() -> Element {
                     on_save: move |config: ConnectionConfig| {
                         show_connection_dialog.set(false);
                         spawn(async move {
-                            match app_state.read().connection_manager.add_config(config).await {
+                            let cm = app_state.read().connection_manager.clone();
+                            match cm.add_config(config).await {
                                 Ok(_) => {
                                     tracing::info!("Connection saved successfully");
-                                    let updated = app_state.read().connection_manager.get_configs().await;
+                                    let updated = cm.get_configs().await;
                                     connections.set(updated);
                                 }
                                 Err(e) => {
@@ -103,24 +103,22 @@ pub fn Sidebar() -> Element {
 fn ConnectionItem(
     connection: ConnectionConfig,
     is_selected: bool,
-    on_select: EventHandler<Uuid>
+    on_select: EventHandler<Uuid>,
 ) -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
     let mut is_connected = use_signal(|| false);
     let mut is_connecting = use_signal(|| false);
-    
+
     // Check connection status
     use_effect(move || {
         let id = connection.id;
         spawn(async move {
-            let connected = app_state.read()
-                .connection_manager
-                .is_connected(id)
-                .await;
+            let cm = app_state.read().connection_manager.clone();
+            let connected = cm.is_connected(id).await;
             is_connected.set(connected);
         });
     });
-    
+
     let status_class = if *is_connected.read() {
         "status-connected"
     } else if *is_connecting.read() {
@@ -128,33 +126,33 @@ fn ConnectionItem(
     } else {
         "status-disconnected"
     };
-    
+
     rsx! {
         div {
             class: format!("connection-item {}", if is_selected { "selected" } else { "" }),
             onclick: move |_| on_select.call(connection.id),
-            
+
             div {
                 class: format!("connection-status {}", status_class)
             }
-            
+
             div {
                 class: "connection-info",
-                
+
                 div {
                     class: "connection-name",
                     "{connection.name}"
                 }
-                
+
                 div {
                     class: "connection-host",
                     "{connection.host}:{connection.port}"
                 }
             }
-            
+
             div {
                 class: "connection-actions",
-                
+
                 if !*is_connected.read() && !*is_connecting.read() {
                     button {
                         class: "btn-small",
@@ -190,7 +188,7 @@ fn ConnectionItem(
                         "Connect"
                     }
                 }
-                
+
                 if *is_connected.read() {
                     button {
                         class: "btn-small btn-danger",
@@ -198,10 +196,8 @@ fn ConnectionItem(
                             e.stop_propagation();
                             let id = connection.id;
                             spawn(async move {
-                                let _ = app_state.read()
-                                    .connection_manager
-                                    .disconnect(id)
-                                    .await;
+                                let cm = app_state.read().connection_manager.clone();
+                                let _ = cm.disconnect(id).await;
                                 is_connected.set(false);
                                 app_state.write().connection_status.set(None);
                             });
@@ -220,16 +216,21 @@ fn TablesSection(connection_name: String) -> Element {
     let mut tables = use_signal(Vec::<String>::new);
     let mut selected_table = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
-    
+
     use_effect(move || {
         loading.set(true);
         spawn(async move {
-            if let Some(conn) = app_state.read().connection_manager.get_active_connection().await {
+            let cm = app_state.read().connection_manager.clone();
+            if let Some(conn) = cm.get_active_connection().await {
                 if let Some(keyspace) = conn.resolve_keyspace().await {
                     match conn.list_tables(&keyspace).await {
                         Ok(t) => tables.set(t),
                         Err(e) => {
-                            tracing::error!("Failed to list tables for keyspace '{}': {}", keyspace, e);
+                            tracing::error!(
+                                "Failed to list tables for keyspace '{}': {}",
+                                keyspace,
+                                e
+                            );
                             tables.set(Vec::new());
                         }
                     }
@@ -242,19 +243,19 @@ fn TablesSection(connection_name: String) -> Element {
             loading.set(false);
         });
     });
-    
+
     rsx! {
         div {
             class: "tables-section",
-            
+
             // Tables header
             div {
                 class: "tables-header",
-                h4 { 
+                h4 {
                     class: "tables-title",
-                    "Tables" 
+                    "Tables"
                 }
-                
+
                 if *loading.read() {
                     span {
                         class: "loading-indicator",
@@ -262,11 +263,11 @@ fn TablesSection(connection_name: String) -> Element {
                     }
                 }
             }
-            
+
             // Tables list
             div {
                 class: "tables-list",
-                
+
                 if tables.read().is_empty() && !*loading.read() {
                     div {
                         class: "empty-tables",
@@ -276,10 +277,10 @@ fn TablesSection(connection_name: String) -> Element {
                     for (idx, table) in tables.read().iter().enumerate() {
                         div {
                             key: "{idx}",
-                            class: if selected_table.read().as_ref() == Some(table) { 
-                                "table-item selected" 
-                            } else { 
-                                "table-item" 
+                            class: if selected_table.read().as_ref() == Some(table) {
+                                "table-item selected"
+                            } else {
+                                "table-item"
                             },
                             onclick: {
                                 let table = table.clone();
@@ -291,7 +292,7 @@ fn TablesSection(connection_name: String) -> Element {
                                     app_state.write().active_tab.set(crate::state::ActiveTab::Data);
                                 }
                             },
-                            
+
                             span {
                                 class: "table-icon",
                                 "📋"
@@ -312,7 +313,7 @@ fn TablesSection(connection_name: String) -> Element {
 #[component]
 fn SavedQueriesSection() -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
-    let mut saved_queries = app_state.read().saved_queries.clone();
+    let mut saved_queries = app_state.read().saved_queries;
 
     let mut delete_query = move |id: Uuid| {
         saved_queries.write().retain(|q| q.id != id);

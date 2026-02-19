@@ -1,12 +1,13 @@
-use dioxus::prelude::*;
 use crate::state::AppState;
+use dioxus::prelude::*;
 
 #[component]
 pub fn StatusBar() -> Element {
     let app_state = use_context::<Signal<AppState>>();
-    let connection_status = app_state.read().connection_status.clone();
+    let connection_status = app_state.read().connection_status;
 
-    let display_text = connection_status.read()
+    let display_text = connection_status
+        .read()
         .clone()
         .unwrap_or_else(|| "No active connection".to_string());
 
@@ -35,7 +36,7 @@ pub fn StatusBar() -> Element {
                 button {
                     class: "status-button",
                     onclick: move |_| {
-                        let theme = app_state.read().theme.clone();
+                        let theme = app_state.read().theme;
                         AppState::toggle_theme(theme);
                     },
                     "🌙"

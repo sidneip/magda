@@ -45,6 +45,12 @@ pub struct AppState {
     pub query_text: Signal<String>,
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppState {
     /// Create a new application state
     pub fn new() -> Self {
@@ -62,9 +68,14 @@ impl AppState {
             query_text: Signal::new(String::new()),
         }
     }
-    
+
     /// Add a query to the history (used with Signal's clone pattern)
-    pub fn add_to_history(mut query_history: Signal<Vec<QueryHistoryItem>>, query: String, success: bool, execution_time_ms: u64) {
+    pub fn add_to_history(
+        mut query_history: Signal<Vec<QueryHistoryItem>>,
+        query: String,
+        success: bool,
+        execution_time_ms: u64,
+    ) {
         let item = QueryHistoryItem {
             id: Uuid::new_v4(),
             query,
@@ -72,21 +83,21 @@ impl AppState {
             execution_time_ms,
             executed_at: chrono::Utc::now(),
         };
-        
+
         let mut history = query_history.write();
         history.push(item);
-        
+
         if history.len() > MAX_QUERY_HISTORY {
             history.remove(0);
         }
     }
-    
+
     /// Toggle sidebar visibility
     pub fn toggle_sidebar(mut sidebar_visible: Signal<bool>) {
         let current = *sidebar_visible.read();
         *sidebar_visible.write() = !current;
     }
-    
+
     /// Switch theme
     pub fn toggle_theme(mut theme: Signal<Theme>) {
         let current_theme = *theme.read();
@@ -133,7 +144,7 @@ impl Theme {
             Theme::Dark => "theme-dark",
         }
     }
-    
+
     /// Get theme colors
     pub fn colors(&self) -> ThemeColors {
         match self {
@@ -178,19 +189,9 @@ pub struct ThemeColors {
 }
 
 /// Query execution state
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct QueryExecution {
     pub is_running: bool,
     pub current_query: Option<String>,
     pub started_at: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-impl Default for QueryExecution {
-    fn default() -> Self {
-        Self {
-            is_running: false,
-            current_query: None,
-            started_at: None,
-        }
-    }
 }
