@@ -1,8 +1,9 @@
 use dioxus::prelude::*;
 use uuid::Uuid;
 
+use crate::config::save_saved_queries;
 use crate::connection::ConnectionConfig;
-use crate::state::AppState;
+use crate::state::{ActiveTab, AppState};
 
 #[component]
 pub fn Sidebar() -> Element {
@@ -69,6 +70,9 @@ pub fn Sidebar() -> Element {
                     }
                 }
             }
+
+            // Saved queries section
+            SavedQueriesSection {}
 
             // Connection dialog
             if *show_connection_dialog.read() {
@@ -292,10 +296,77 @@ fn TablesSection(connection_name: String) -> Element {
                                 class: "table-icon",
                                 "📋"
                             }
-                            
+
                             span {
                                 class: "table-name",
                                 "{table}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn SavedQueriesSection() -> Element {
+    let mut app_state = use_context::<Signal<AppState>>();
+    let mut saved_queries = app_state.read().saved_queries.clone();
+
+    let mut delete_query = move |id: Uuid| {
+        saved_queries.write().retain(|q| q.id != id);
+        save_saved_queries(&saved_queries.read());
+    };
+
+    rsx! {
+        div {
+            class: "tables-section",
+
+            div {
+                class: "tables-header",
+                h4 {
+                    class: "tables-title",
+                    "Saved Queries"
+                }
+            }
+
+            div {
+                class: "tables-list",
+
+                if saved_queries.read().is_empty() {
+                    div {
+                        class: "empty-tables",
+                        "No saved queries"
+                    }
+                } else {
+                    for query in saved_queries.read().iter() {
+                        {
+                            let query_text = query.query.clone();
+                            let query_id = query.id;
+                            rsx! {
+                                div {
+                                    key: "{query.id}",
+                                    class: "saved-query-item",
+                                    onclick: move |_| {
+                                        app_state.write().pending_query.set(Some(query_text.clone()));
+                                        app_state.read().active_tab.clone().set(ActiveTab::Query);
+                                    },
+
+                                    span {
+                                        class: "saved-query-name",
+                                        "{query.name}"
+                                    }
+
+                                    button {
+                                        class: "btn-small btn-danger",
+                                        onclick: move |e| {
+                                            e.stop_propagation();
+                                            delete_query(query_id);
+                                        },
+                                        "×"
+                                    }
+                                }
                             }
                         }
                     }

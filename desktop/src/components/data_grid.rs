@@ -104,17 +104,31 @@ pub fn DataGrid(
                 
                 div {
                     class: "results-actions",
-                    
+
                     button {
                         class: "btn-icon",
                         title: "Export as CSV",
-                        "📥"
-                    }
-                    
-                    button {
-                        class: "btn-icon",
-                        title: "Copy results",
-                        "📋"
+                        disabled: query_result.read().is_none(),
+                        onclick: move |_| {
+                            if let Some(ref result) = *query_result.read() {
+                                let csv = export_to_csv(result);
+                                spawn(async move {
+                                    if let Some(path) = rfd::AsyncFileDialog::new()
+                                        .set_file_name("export.csv")
+                                        .add_filter("CSV", &["csv"])
+                                        .save_file()
+                                        .await
+                                    {
+                                        if let Err(e) = tokio::fs::write(path.path(), csv.as_bytes()).await {
+                                            tracing::error!("Failed to write CSV: {}", e);
+                                        } else {
+                                            tracing::info!("CSV exported to {:?}", path.path());
+                                        }
+                                    }
+                                });
+                            }
+                        },
+                        "Export CSV"
                     }
                 }
             }
@@ -226,4 +240,27 @@ fn format_value(value: &Value) -> String {
         Value::Array(arr) => format!("[{} items]", arr.len()),
         Value::Object(obj) => format!("{{{}}} fields", obj.len()),
     }
+}
+
+fn csv_escape(field: &str) -> String {
+    if field.contains(',') || field.contains('"') || field.contains('\n') {
+        format!("\"{}\"", field.replace('"', "\"\""))
+    } else {
+        field.to_string()
+    }
+}
+
+pub fn export_to_csv(result: &QueryResult) -> String {
+    let mut out = String::new();
+    // Header row
+    let headers: Vec<String> = result.columns.iter().map(|c| csv_escape(&c.name)).collect();
+    out.push_str(&headers.join(","));
+    out.push('\n');
+    // Data rows
+    for row in &result.rows {
+        let cells: Vec<String> = row.iter().map(|v| csv_escape(&format_value(v))).collect();
+        out.push_str(&cells.join(","));
+        out.push('\n');
+    }
+    out
 }

@@ -39,6 +39,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 directories = "5.0"
 toml = "0.8"
 
+# Native dialogs
+rfd = "0.15"
+
 [features]
 default = ["desktop"]
 desktop = ["dioxus/desktop"]

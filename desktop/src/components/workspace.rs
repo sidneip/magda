@@ -234,6 +234,31 @@ fn QueryWorkspace() -> Element {
                                 }
                             }
 
+                            div {
+                                class: "results-actions",
+                                button {
+                                    class: "btn-small",
+                                    onclick: move |_| {
+                                        if let Some(ref result) = *cached_result.read() {
+                                            let csv = super::data_grid::export_to_csv(result);
+                                            spawn(async move {
+                                                if let Some(path) = rfd::AsyncFileDialog::new()
+                                                    .set_file_name("export.csv")
+                                                    .add_filter("CSV", &["csv"])
+                                                    .save_file()
+                                                    .await
+                                                {
+                                                    if let Err(e) = tokio::fs::write(path.path(), csv.as_bytes()).await {
+                                                        tracing::error!("Failed to write CSV: {}", e);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    },
+                                    "Export CSV"
+                                }
+                            }
+
                             if total_pages > 1 {
                                 div {
                                     class: "pagination-controls",

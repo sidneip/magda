@@ -3,6 +3,7 @@ use dioxus::prelude::*;
 mod cassandra;
 mod config;
 mod connection;
+mod cql_tokenizer;
 mod error;
 mod state;
 mod components;

@@ -89,12 +89,13 @@ magda/
 
 ## Roadmap
 
-- [ ] Syntax highlighting for CQL
-- [ ] Export results to CSV / JSON
+- [x] Syntax highlighting for CQL
+- [x] Export results to CSV
+- [ ] Export results to JSON
 - [ ] Connection import / export
 - [ ] Light theme
-- [ ] Query autocomplete
-- [ ] Saved queries / snippets
+- [x] Query autocomplete
+- [x] Saved queries / snippets
 
 ## License
 

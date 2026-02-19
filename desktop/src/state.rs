@@ -18,6 +18,14 @@ pub struct QueryVariable {
     pub value: String,
 }
 
+/// A saved CQL query/snippet.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SavedQuery {
+    pub id: Uuid,
+    pub name: String,
+    pub query: String,
+}
+
 /// Global application state
 #[derive(Clone)]
 pub struct AppState {
@@ -32,6 +40,7 @@ pub struct AppState {
     /// `None` means disconnected, `Some(description)` means connected.
     pub connection_status: Signal<Option<String>>,
     pub query_variables: Signal<Vec<QueryVariable>>,
+    pub saved_queries: Signal<Vec<SavedQuery>>,
 }
 
 impl AppState {
@@ -47,6 +56,7 @@ impl AppState {
             pending_query: Signal::new(None),
             connection_status: Signal::new(None),
             query_variables: Signal::new(crate::config::load_variables()),
+            saved_queries: Signal::new(crate::config::load_saved_queries()),
         }
     }
     
