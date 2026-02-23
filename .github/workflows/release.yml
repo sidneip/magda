@@ -65,7 +65,7 @@ jobs:
           mkdir -p dist
           cp target/dx/magda-desktop/bundle/linux/bundle/deb/*.deb dist/magda-linux-x86_64.deb 2>/dev/null || true
           # Also create a tar.gz with the raw binary as fallback
-          tar czf dist/magda-linux-x86_64.tar.gz -C target/dx/magda-desktop/release magda-desktop
+          tar czf dist/magda-linux-x86_64.tar.gz -C target/dx/magda-desktop/release/linux magda-desktop
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
@@ -82,7 +82,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item "target/dx/magda-desktop/bundle/windows/bundle/nsis/*.exe" "dist/magda-windows-x86_64-setup.exe" -ErrorAction SilentlyContinue
           # Also zip the raw binary as fallback
-          Compress-Archive -Path "target/dx/magda-desktop/release/magda-desktop.exe" -DestinationPath "dist/magda-windows-x86_64.zip" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "target/dx/magda-desktop/release/windows/magda-desktop.exe" -DestinationPath "dist/magda-windows-x86_64.zip" -ErrorAction SilentlyContinue
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
