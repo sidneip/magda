@@ -34,7 +34,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install Dioxus CLI
-        run: cargo install dioxus-cli
+        run: cargo install dioxus-cli --version 0.7.0 --locked
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
