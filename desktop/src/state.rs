@@ -43,6 +43,12 @@ pub struct AppState {
     pub saved_queries: Signal<Vec<SavedQuery>>,
     /// Current text in the query editor — persists across tab switches.
     pub query_text: Signal<String>,
+    /// Transient status message shown in the status bar (connecting, errors, etc.).
+    pub status_message: Signal<Option<StatusMessage>>,
+    /// Console log entries (connection events, query results, errors)
+    pub console_log: Signal<Vec<ConsoleEntry>>,
+    /// Whether the console panel is visible
+    pub console_visible: Signal<bool>,
 }
 
 impl Default for AppState {
@@ -66,6 +72,9 @@ impl AppState {
             query_variables: Signal::new(crate::config::load_variables()),
             saved_queries: Signal::new(crate::config::load_saved_queries()),
             query_text: Signal::new(String::new()),
+            status_message: Signal::new(None),
+            console_log: Signal::new(Vec::new()),
+            console_visible: Signal::new(false),
         }
     }
 
@@ -89,6 +98,31 @@ impl AppState {
 
         if history.len() > MAX_QUERY_HISTORY {
             history.remove(0);
+        }
+    }
+
+    /// Push a message to the console log and update the status bar message
+    pub fn console_push(
+        mut console_log: Signal<Vec<ConsoleEntry>>,
+        mut status_message: Signal<Option<StatusMessage>>,
+        level: StatusLevel,
+        category: ConsoleCategory,
+        message: impl Into<String>,
+    ) {
+        let text = message.into();
+        status_message.set(Some(StatusMessage {
+            text: text.clone(),
+            level: level.clone(),
+        }));
+        let mut log = console_log.write();
+        log.push(ConsoleEntry {
+            timestamp: chrono::Utc::now(),
+            level,
+            category,
+            message: text,
+        });
+        if log.len() > MAX_CONSOLE_ENTRIES {
+            log.remove(0);
         }
     }
 
@@ -186,6 +220,41 @@ pub struct ThemeColors {
     pub success: &'static str,
     pub warning: &'static str,
     pub error: &'static str,
+}
+
+/// Level of a status message shown in the status bar
+#[derive(Clone, Debug, PartialEq)]
+pub enum StatusLevel {
+    Info,
+    Success,
+    Error,
+}
+
+/// A transient message displayed in the status bar
+#[derive(Clone, Debug)]
+pub struct StatusMessage {
+    pub text: String,
+    pub level: StatusLevel,
+}
+
+/// Maximum number of console entries to retain
+pub const MAX_CONSOLE_ENTRIES: usize = 500;
+
+/// A single entry in the application console log
+#[derive(Clone, Debug)]
+pub struct ConsoleEntry {
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub level: StatusLevel,
+    pub category: ConsoleCategory,
+    pub message: String,
+}
+
+/// Category of console entry for filtering
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConsoleCategory {
+    Connection,
+    Query,
+    System,
 }
 
 /// Query execution state

@@ -4,7 +4,7 @@ use super::data_grid::DataGrid;
 use super::query_editor::QueryEditor;
 use super::schema_viewer::SchemaViewer;
 use super::variables_panel::VariablesPanel;
-use crate::state::{ActiveTab, AppState, QueryVariable, DEFAULT_PAGE_SIZE};
+use crate::state::{ActiveTab, AppState, ConsoleCategory, QueryVariable, StatusLevel, DEFAULT_PAGE_SIZE};
 
 fn substitute_variables(query: &str, vars: &[QueryVariable]) -> String {
     let mut result = query.to_string();
@@ -161,8 +161,11 @@ fn QueryWorkspace() -> Element {
 
         spawn(async move {
             let cm = app_state.read().connection_manager.clone();
+            let console_log = app_state.read().console_log;
+            let status_msg = app_state.read().status_message;
             if let Some(connection) = cm.get_active_connection().await {
                 tracing::debug!("Executing query: {}", substituted);
+                AppState::console_push(console_log, status_msg, StatusLevel::Info, ConsoleCategory::Query, format!("Executing: {}", substituted));
                 match connection.execute_query(&substituted).await {
                     Ok(result) => {
                         let execution_time = result.execution_time_ms;
@@ -171,6 +174,7 @@ fn QueryWorkspace() -> Element {
                             result.row_count,
                             execution_time
                         );
+                        AppState::console_push(console_log, status_msg, StatusLevel::Success, ConsoleCategory::Query, format!("{} rows in {}ms", result.row_count, execution_time));
                         cached_result.set(Some(result));
 
                         // Store original query with placeholders in history
@@ -186,6 +190,7 @@ fn QueryWorkspace() -> Element {
                     Err(e) => {
                         let error_msg = format!("Query failed: {}", e);
                         tracing::error!("{}", error_msg);
+                        AppState::console_push(console_log, status_msg, StatusLevel::Error, ConsoleCategory::Query, error_msg.clone());
                         query_error.set(Some(error_msg));
 
                         let history_item = crate::state::QueryHistoryItem {
@@ -199,7 +204,9 @@ fn QueryWorkspace() -> Element {
                     }
                 }
             } else {
-                query_error.set(Some("No active connection available".to_string()));
+                let msg = "No active connection available".to_string();
+                AppState::console_push(console_log, status_msg, StatusLevel::Error, ConsoleCategory::Query, msg.clone());
+                query_error.set(Some(msg));
             }
             is_executing.set(false);
         });

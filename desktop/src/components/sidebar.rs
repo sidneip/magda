@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::config::save_saved_queries;
 use crate::connection::ConnectionConfig;
-use crate::state::{ActiveTab, AppState};
+use crate::state::{ActiveTab, AppState, ConsoleCategory, StatusLevel};
 
 #[component]
 pub fn Sidebar() -> Element {
@@ -11,6 +11,7 @@ pub fn Sidebar() -> Element {
     let mut connections = use_signal(Vec::<ConnectionConfig>::new);
     let mut selected_connection = use_signal(|| None::<Uuid>);
     let mut show_connection_dialog = use_signal(|| false);
+    let mut editing_connection = use_signal(|| None::<ConnectionConfig>);
 
     // Load connections on mount
     use_effect(move || {
@@ -36,7 +37,10 @@ pub fn Sidebar() -> Element {
 
                 button {
                     class: "btn-icon",
-                    onclick: move |_| show_connection_dialog.set(true),
+                    onclick: move |_| {
+                        editing_connection.set(None);
+                        show_connection_dialog.set(true);
+                    },
                     title: "Add Connection",
                     "+"
                 }
@@ -56,6 +60,28 @@ pub fn Sidebar() -> Element {
                                 let cm = app_state.read().connection_manager.clone();
                                 let _ = cm.set_active_connection(id).await;
                             });
+                        },
+                        on_edit: move |config: ConnectionConfig| {
+                            editing_connection.set(Some(config));
+                            show_connection_dialog.set(true);
+                        },
+                        on_delete: move |id: Uuid| {
+                            spawn(async move {
+                                let cm = app_state.read().connection_manager.clone();
+                                let console_log = app_state.read().console_log;
+                                let status_message = app_state.read().status_message;
+                                match cm.remove_config(id).await {
+                                    Ok(_) => {
+                                        let updated = cm.get_configs().await;
+                                        connections.set(updated);
+                                        AppState::console_push(console_log, status_message, StatusLevel::Info, ConsoleCategory::Connection, "Connection removed");
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to remove connection: {}", e);
+                                        AppState::console_push(console_log, status_message, StatusLevel::Error, ConsoleCategory::Connection, format!("Failed to remove: {}", e));
+                                    }
+                                }
+                            });
                         }
                     }
                 }
@@ -73,26 +99,42 @@ pub fn Sidebar() -> Element {
             // Saved queries section
             SavedQueriesSection {}
 
-            // Connection dialog
+            // Connection dialog (new or edit)
             if *show_connection_dialog.read() {
                 super::connection_dialog::ConnectionDialog {
-                    on_close: move |_| show_connection_dialog.set(false),
-                    on_save: move |config: ConnectionConfig| {
+                    on_close: move |_| {
                         show_connection_dialog.set(false);
+                        editing_connection.set(None);
+                    },
+                    on_save: move |config: ConnectionConfig| {
+                        let is_edit = editing_connection.read().is_some();
+                        show_connection_dialog.set(false);
+                        editing_connection.set(None);
                         spawn(async move {
                             let cm = app_state.read().connection_manager.clone();
-                            match cm.add_config(config).await {
+                            let console_log = app_state.read().console_log;
+                            let status_message = app_state.read().status_message;
+                            let result = if is_edit {
+                                cm.update_config(config).await.map(|_| ())
+                            } else {
+                                cm.add_config(config).await.map(|_| ())
+                            };
+                            match result {
                                 Ok(_) => {
-                                    tracing::info!("Connection saved successfully");
+                                    let msg = if is_edit { "Connection updated" } else { "Connection saved" };
+                                    tracing::info!("{}", msg);
                                     let updated = cm.get_configs().await;
                                     connections.set(updated);
+                                    AppState::console_push(console_log, status_message, StatusLevel::Success, ConsoleCategory::Connection, msg);
                                 }
                                 Err(e) => {
                                     tracing::error!("Failed to save connection: {}", e);
+                                    AppState::console_push(console_log, status_message, StatusLevel::Error, ConsoleCategory::Connection, format!("Failed to save: {}", e));
                                 }
                             }
                         });
-                    }
+                    },
+                    existing: editing_connection.read().clone()
                 }
             }
         }
@@ -104,10 +146,13 @@ fn ConnectionItem(
     connection: ConnectionConfig,
     is_selected: bool,
     on_select: EventHandler<Uuid>,
+    on_edit: EventHandler<ConnectionConfig>,
+    on_delete: EventHandler<Uuid>,
 ) -> Element {
     let mut app_state = use_context::<Signal<AppState>>();
     let mut is_connected = use_signal(|| false);
     let mut is_connecting = use_signal(|| false);
+    let mut confirm_delete = use_signal(|| false);
 
     // Check connection status
     use_effect(move || {
@@ -156,36 +201,53 @@ fn ConnectionItem(
                 if !*is_connected.read() && !*is_connecting.read() {
                     button {
                         class: "btn-small",
-                        onclick: move |e| {
-                            e.stop_propagation();
-                            is_connecting.set(true);
-                            let id = connection.id;
-                            let conn_name = connection.name.clone();
-                            tracing::info!("Connecting to: {}", conn_name);
-                            spawn(async move {
-                                tracing::debug!("Attempting to connect to: {} (id: {})", conn_name, id);
-                                let cm = app_state.read().connection_manager.clone();
-                                match cm.connect(id).await {
-                                    Ok(_) => {
-                                        tracing::info!("Connected to: {}", conn_name);
-                                        is_connected.set(true);
-                                        // Update reactive connection status for statusbar
-                                        let config = cm.get_config(id).await;
-                                        if let Some(cfg) = config {
-                                            let ks = cfg.keyspace.map(|k| format!(" / {}", k)).unwrap_or_default();
-                                            app_state.write().connection_status.set(
-                                                Some(format!("Connected: {}:{}{}", cfg.host, cfg.port, ks))
-                                            );
+                        onclick: {
+                            let connection = connection.clone();
+                            move |e| {
+                                e.stop_propagation();
+                                is_connecting.set(true);
+                                let id = connection.id;
+                                let conn_name = connection.name.clone();
+                                tracing::info!("Connecting to: {}", conn_name);
+                                let console_log = app_state.read().console_log;
+                                let status_msg = app_state.read().status_message;
+                                AppState::console_push(console_log, status_msg, StatusLevel::Info, ConsoleCategory::Connection, format!("Connecting to {}...", conn_name));
+                                spawn(async move {
+                                    tracing::debug!("Attempting to connect to: {} (id: {})", conn_name, id);
+                                    let cm = app_state.read().connection_manager.clone();
+                                    let console_log = app_state.read().console_log;
+                                    let status_msg = app_state.read().status_message;
+                                    match cm.connect(id).await {
+                                        Ok(_) => {
+                                            tracing::info!("Connected to: {}", conn_name);
+                                            is_connected.set(true);
+                                            let config = cm.get_config(id).await;
+                                            if let Some(cfg) = config {
+                                                let ks = cfg.keyspace.map(|k| format!(" / {}", k)).unwrap_or_default();
+                                                app_state.write().connection_status.set(
+                                                    Some(format!("Connected: {}:{}{}", cfg.host, cfg.port, ks))
+                                                );
+                                            }
+                                            AppState::console_push(console_log, status_msg, StatusLevel::Success, ConsoleCategory::Connection, format!("Connected to {}", conn_name));
+                                        }
+                                        Err(e) => {
+                                            let err_msg = format!("{}", e);
+                                            tracing::error!("Failed to connect to {}: {}", conn_name, err_msg);
+                                            AppState::console_push(console_log, status_msg, StatusLevel::Error, ConsoleCategory::Connection, format!("Connection failed: {}", err_msg));
                                         }
                                     }
-                                    Err(e) => {
-                                        tracing::error!("Failed to connect to {}: {}", conn_name, e);
-                                    }
-                                }
-                                is_connecting.set(false);
-                            });
+                                    is_connecting.set(false);
+                                });
+                            }
                         },
                         "Connect"
+                    }
+                }
+
+                if *is_connecting.read() {
+                    span {
+                        class: "connecting-indicator",
+                        "..."
                     }
                 }
 
@@ -200,9 +262,70 @@ fn ConnectionItem(
                                 let _ = cm.disconnect(id).await;
                                 is_connected.set(false);
                                 app_state.write().connection_status.set(None);
+                                let console_log = app_state.read().console_log;
+                                let status_msg = app_state.read().status_message;
+                                AppState::console_push(console_log, status_msg, StatusLevel::Info, ConsoleCategory::Connection, "Disconnected");
                             });
                         },
                         "Disconnect"
+                    }
+                }
+
+                // Edit/Delete buttons (only when not connected, visible on hover)
+                if !*is_connected.read() && !*is_connecting.read() {
+                    if *confirm_delete.read() {
+                        span {
+                            class: "confirm-delete",
+                            onclick: move |e| e.stop_propagation(),
+
+                            span { class: "confirm-label", "Delete?" }
+                            button {
+                                class: "btn-small btn-danger",
+                                onclick: {
+                                    let id = connection.id;
+                                    move |e| {
+                                        e.stop_propagation();
+                                        confirm_delete.set(false);
+                                        on_delete.call(id);
+                                    }
+                                },
+                                "Yes"
+                            }
+                            button {
+                                class: "btn-small",
+                                onclick: move |e| {
+                                    e.stop_propagation();
+                                    confirm_delete.set(false);
+                                },
+                                "No"
+                            }
+                        }
+                    } else {
+                        div {
+                            class: "connection-secondary-actions",
+
+                            button {
+                                class: "btn-icon-small",
+                                title: "Edit connection",
+                                onclick: {
+                                    let connection = connection.clone();
+                                    move |e| {
+                                        e.stop_propagation();
+                                        on_edit.call(connection.clone());
+                                    }
+                                },
+                                "✎"
+                            }
+                            button {
+                                class: "btn-icon-small btn-danger-text",
+                                title: "Delete connection",
+                                onclick: move |e| {
+                                    e.stop_propagation();
+                                    confirm_delete.set(true);
+                                },
+                                "✕"
+                            }
+                        }
                     }
                 }
             }
@@ -365,7 +488,7 @@ fn SavedQueriesSection() -> Element {
                                             e.stop_propagation();
                                             delete_query(query_id);
                                         },
-                                        "×"
+                                        "x"
                                     }
                                 }
                             }

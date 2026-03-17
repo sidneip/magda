@@ -7,6 +7,7 @@ pub mod state;
 pub mod components {
     pub mod code_editor;
     pub mod connection_dialog;
+    pub mod console_panel;
     pub mod data_grid;
     pub mod query_editor;
     pub mod schema_viewer;

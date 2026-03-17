@@ -1,3 +1,4 @@
+use cdrs_tokio::authenticators::StaticPasswordAuthenticatorProvider;
 use cdrs_tokio::cluster::session::{SessionBuilder, TcpSessionBuilder};
 use cdrs_tokio::cluster::NodeTcpConfigBuilder;
 use cdrs_tokio::frame::message_response::ResponseBody;
@@ -72,14 +73,27 @@ impl CassandraSession {
 }
 
 /// Create a new Cassandra session
-pub async fn create_session(host: &str, port: u16) -> Result<CassandraSession> {
+pub async fn create_session(
+    host: &str,
+    port: u16,
+    username: Option<&str>,
+    password: Option<&str>,
+) -> Result<CassandraSession> {
     tracing::info!("Creating connection to {}:{}", host, port);
 
     let contact_point = format!("{}:{}", host, port);
 
     // Configure connection to Cassandra instance
-    let config = NodeTcpConfigBuilder::new()
-        .with_contact_point(contact_point.into())
+    let mut builder = NodeTcpConfigBuilder::new().with_contact_point(contact_point.into());
+
+    if let (Some(user), Some(pass)) = (username, password) {
+        tracing::info!("Using password authentication for user '{}'", user);
+        builder = builder.with_authenticator_provider(Arc::new(
+            StaticPasswordAuthenticatorProvider::new(user, pass),
+        ));
+    }
+
+    let config = builder
         .build()
         .await
         .map_err(|e| MagdaError::ConnectionError(format!("Failed to build config: {}", e)))?;

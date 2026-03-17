@@ -4,17 +4,21 @@ use magda_desktop::cassandra;
 async fn main() {
     tracing_subscriber::fmt().with_env_filter("debug").init();
 
-    let host = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "localhost".to_string());
-    let port: u16 = std::env::args()
-        .nth(2)
+    let args: Vec<String> = std::env::args().collect();
+    let host = args.get(1).map(|s| s.as_str()).unwrap_or("localhost");
+    let port: u16 = args
+        .get(2)
         .and_then(|p| p.parse().ok())
         .unwrap_or(9042);
+    let username = args.get(3).map(|s| s.as_str());
+    let password = args.get(4).map(|s| s.as_str());
 
     println!("Testing Cassandra connection to {}:{}", host, port);
+    if username.is_some() {
+        println!("Using authentication for user '{}'", username.unwrap());
+    }
 
-    match cassandra::create_session(&host, port).await {
+    match cassandra::create_session(host, port, username, password).await {
         Ok(session) => {
             println!("Connected successfully!");
 

@@ -85,6 +85,17 @@ fn App() -> Element {
                 }
             }
 
+            // Console panel (toggled via status bar click)
+            {
+                let app_state = use_context::<Signal<AppState>>();
+                let visible = *app_state.read().console_visible.read();
+                rsx! {
+                    if visible {
+                        components::console_panel::ConsolePanel {}
+                    }
+                }
+            }
+
             // Status bar at the bottom
             components::statusbar::StatusBar {}
         }

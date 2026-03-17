@@ -110,6 +110,33 @@ impl ConnectionManager {
         Ok(id)
     }
 
+    /// Update an existing connection configuration
+    pub async fn update_config(&self, config: ConnectionConfig) -> Result<()> {
+        config.validate()?;
+
+        let mut configs = self.configs.write().await;
+
+        // Check for duplicate names (excluding self)
+        if configs
+            .iter()
+            .any(|c| c.name == config.name && c.id != config.id)
+        {
+            return Err(MagdaError::validation(format!(
+                "Connection with name '{}' already exists",
+                config.name
+            )));
+        }
+
+        if let Some(existing) = configs.iter_mut().find(|c| c.id == config.id) {
+            *existing = config;
+        } else {
+            return Err(MagdaError::validation("Connection not found"));
+        }
+
+        persist_configs(&configs);
+        Ok(())
+    }
+
     /// Remove a connection configuration
     pub async fn remove_config(&self, id: Uuid) -> Result<()> {
         // Disconnect if active

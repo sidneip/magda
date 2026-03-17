@@ -88,7 +88,13 @@ impl CassandraConnection {
         config.validate()?;
 
         // Create session using our cassandra module
-        let session = crate::cassandra::create_session(&config.host, config.port).await?;
+        let session = crate::cassandra::create_session(
+            &config.host,
+            config.port,
+            config.username.as_deref(),
+            config.password.as_deref(),
+        )
+        .await?;
 
         // Set the active keyspace if configured
         if let Some(ref keyspace) = config.keyspace {

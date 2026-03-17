@@ -5,14 +5,50 @@ use dioxus::prelude::*;
 pub fn ConnectionDialog(
     on_close: EventHandler<()>,
     on_save: EventHandler<ConnectionConfig>,
+    #[props(default)] existing: Option<ConnectionConfig>,
 ) -> Element {
-    let mut name = use_signal(String::new);
-    let mut host = use_signal(|| "localhost".to_string());
-    let mut port = use_signal(|| "9042".to_string());
-    let mut username = use_signal(String::new);
-    let mut password = use_signal(String::new);
-    let mut keyspace = use_signal(String::new);
+    let is_edit = existing.is_some();
+    let existing_id = existing.as_ref().map(|c| c.id);
+
+    let mut name = use_signal(|| {
+        existing
+            .as_ref()
+            .map(|c| c.name.clone())
+            .unwrap_or_default()
+    });
+    let mut host = use_signal(|| {
+        existing
+            .as_ref()
+            .map(|c| c.host.clone())
+            .unwrap_or_else(|| "localhost".to_string())
+    });
+    let mut port = use_signal(|| {
+        existing
+            .as_ref()
+            .map(|c| c.port.to_string())
+            .unwrap_or_else(|| "9042".to_string())
+    });
+    let mut username = use_signal(|| {
+        existing
+            .as_ref()
+            .and_then(|c| c.username.clone())
+            .unwrap_or_default()
+    });
+    let mut password = use_signal(|| {
+        existing
+            .as_ref()
+            .and_then(|c| c.password.clone())
+            .unwrap_or_default()
+    });
+    let mut keyspace = use_signal(|| {
+        existing
+            .as_ref()
+            .and_then(|c| c.keyspace.clone())
+            .unwrap_or_default()
+    });
     let mut validation_error = use_signal(|| None::<String>);
+
+    let title = if is_edit { "Edit Connection" } else { "New Connection" };
 
     rsx! {
         div {
@@ -25,11 +61,11 @@ pub fn ConnectionDialog(
 
                 div {
                     class: "modal-header",
-                    h2 { "New Connection" }
+                    h2 { "{title}" }
                     button {
                         class: "btn-close",
                         onclick: move |_| on_close.call(()),
-                        "×"
+                        "x"
                     }
                 }
 
@@ -150,10 +186,20 @@ pub fn ConnectionDialog(
 
                             validation_error.set(None);
 
-                            let mut config = ConnectionConfig::new(
-                                name.read().trim().to_string(),
-                                host.read().trim().to_string(),
-                            );
+                            let mut config = if let Some(id) = existing_id {
+                                // Preserve the original ID when editing
+                                let mut c = ConnectionConfig::new(
+                                    name.read().trim().to_string(),
+                                    host.read().trim().to_string(),
+                                );
+                                c.id = id;
+                                c
+                            } else {
+                                ConnectionConfig::new(
+                                    name.read().trim().to_string(),
+                                    host.read().trim().to_string(),
+                                )
+                            };
                             config.port = port_num;
 
                             if !username.read().is_empty() {
@@ -167,7 +213,7 @@ pub fn ConnectionDialog(
 
                             on_save.call(config);
                         },
-                        "Save"
+                        if is_edit { "Update" } else { "Save" }
                     }
                 }
             }
